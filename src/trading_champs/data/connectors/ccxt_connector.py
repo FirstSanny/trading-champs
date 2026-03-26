@@ -61,8 +61,9 @@ class CCXTConnector(BaseConnector):
             raise ConnectionError(f"Not connected to {self.exchange_id}")
 
         try:
-            # type: ignore[union-attr]
-            raw_bars = self._exchange.fetch_ohlcv(symbol, timeframe, since, limit)
+            raw_bars = self._exchange.fetch_ohlcv(  # type: ignore[union-attr]
+                symbol, timeframe, since, limit
+            )
             return [
                 PriceBar(
                     symbol=symbol,
