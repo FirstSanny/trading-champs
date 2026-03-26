@@ -68,7 +68,9 @@ def create_app(tracker: PnLTracker | None = None) -> FastAPI:
         return {"status": "success", "trade_id": trade.id}
 
     @app.post("/api/trades/{trade_id}/close")
-    async def close_trade(trade_id: str, exit_price: float, exit_time: datetime | None = None) -> dict:
+    async def close_trade(
+        trade_id: str, exit_price: float, exit_time: datetime | None = None
+    ) -> dict:
         """Close a trade."""
         if exit_time is None:
             exit_time = datetime.now()
