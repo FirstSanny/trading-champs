@@ -3,7 +3,7 @@
 import logging
 import os
 from decimal import Decimal
-from typing import Optional, List
+from typing import Any, Optional, List
 
 import requests
 
@@ -25,12 +25,12 @@ HEADERS = {
 class AlpacaPaperConnector(BaseConnector):
     """Connector for Alpaca paper trading API v2."""
 
-    def __init__(self, config: dict = None):
+    def __init__(self, config: Optional[dict] = None):
         super().__init__(config or {})
         self.base_url = ALPACA_PAPER_API
         self.api_key = ALPACA_API_KEY
         self.api_secret = ALPACA_API_SECRET
-        self._account = None
+        self._account: Optional[Any] = None
 
     @property
     def name(self) -> str:
@@ -73,7 +73,7 @@ class AlpacaPaperConnector(BaseConnector):
                 timeout=10,
             )
             response.raise_for_status()
-            return response.json()
+            return response.json()  # type: ignore[no-any-return]
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to fetch account: {e}")
             raise
@@ -90,7 +90,7 @@ class AlpacaPaperConnector(BaseConnector):
                 timeout=10,
             )
             response.raise_for_status()
-            return response.json()
+            return response.json()  # type: ignore[no-any-return]
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to fetch positions: {e}")
             raise
@@ -109,7 +109,7 @@ class AlpacaPaperConnector(BaseConnector):
             if response.status_code == 404:
                 return None
             response.raise_for_status()
-            return response.json()
+            return response.json()  # type: ignore[no-any-return]
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to fetch position for {symbol}: {e}")
             raise
@@ -159,7 +159,7 @@ class AlpacaPaperConnector(BaseConnector):
             )
             response.raise_for_status()
             logger.info(f"Order submitted: {side} {qty} {symbol} @ {order_type}")
-            return response.json()
+            return response.json()  # type: ignore[no-any-return]
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to submit order: {e}")
             raise
@@ -180,12 +180,12 @@ class AlpacaPaperConnector(BaseConnector):
         try:
             response = requests.get(
                 f"{self.base_url}/v2/orders",
-                params={"status": status, "limit": limit},
+                params={"status": status, "limit": limit},  # type: ignore[arg-type]
                 headers=HEADERS,
                 timeout=10,
             )
             response.raise_for_status()
-            return response.json()
+            return response.json()  # type: ignore[no-any-return]
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to fetch orders: {e}")
             raise

@@ -2,6 +2,7 @@
 
 import pathlib
 from datetime import datetime
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
@@ -33,22 +34,22 @@ def create_app(tracker: PnLTracker | None = None) -> FastAPI:
     provider = DashboardProvider(tracker)
 
     @app.get("/", response_class=HTMLResponse)
-    async def root():
+    async def root() -> str:
         """Serve the main dashboard page."""
         return _DASHBOARD_HTML
 
     @app.get("/api/dashboard")
-    async def get_dashboard(days: int = 30):
+    async def get_dashboard(days: int = 30) -> Any:
         """Get dashboard data."""
         return provider.get_dashboard_data(days)
 
     @app.get("/api/equity-curve")
-    async def get_equity_curve(days: int = 30):
+    async def get_equity_curve(days: int = 30) -> Any:
         """Get equity curve data."""
         return provider.get_equity_curve(days)
 
     @app.post("/api/trades")
-    async def create_trade(trade_data: dict):
+    async def create_trade(trade_data: dict) -> dict:
         """Log a new trade."""
         side = TradeSide.LONG if trade_data.get("side", "").upper() == "LONG" else TradeSide.SHORT
         entry_time = (
@@ -67,7 +68,7 @@ def create_app(tracker: PnLTracker | None = None) -> FastAPI:
         return {"status": "success", "trade_id": trade.id}
 
     @app.post("/api/trades/{trade_id}/close")
-    async def close_trade(trade_id: str, exit_price: float, exit_time: datetime | None = None):
+    async def close_trade(trade_id: str, exit_price: float, exit_time: datetime | None = None) -> dict:
         """Close a trade."""
         if exit_time is None:
             exit_time = datetime.now()
@@ -78,7 +79,7 @@ def create_app(tracker: PnLTracker | None = None) -> FastAPI:
         return {"status": "success", "trade_id": trade.id, "pnl": trade.pnl}
 
     @app.get("/api/trades")
-    async def get_trades(status: str | None = None):
+    async def get_trades(status: str | None = None) -> Any:
         """Get trades with optional status filter."""
         if status == "open":
             return tracker.trade_log.get_open_trades()

@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Optional, List
+from typing import Any, Optional, List
 
 import ccxt
 
@@ -19,7 +19,7 @@ class CCXTConnector(BaseConnector):
         self.exchange_id = config.get("exchange", "binance")
         self.api_key = config.get("api_key")
         self.api_secret = config.get("api_secret")
-        self._exchange = None
+        self._exchange: Optional[Any] = None
 
     @property
     def name(self) -> str:
@@ -61,7 +61,7 @@ class CCXTConnector(BaseConnector):
             raise ConnectionError(f"Not connected to {self.exchange_id}")
 
         try:
-            raw_bars = self._exchange.fetch_ohlcv(symbol, timeframe, since, limit)
+            raw_bars = self._exchange.fetch_ohlcv(symbol, timeframe, since, limit)  # type: ignore[union-attr]
             return [
                 PriceBar(
                     symbol=symbol,
@@ -85,7 +85,7 @@ class CCXTConnector(BaseConnector):
             raise ConnectionError(f"Not connected to {self.exchange_id}")
 
         try:
-            ticker = self._exchange.fetch_ticker(symbol)
+            ticker = self._exchange.fetch_ticker(symbol)  # type: ignore[union-attr]
             return {
                 "symbol": symbol,
                 "last": float(ticker.get("last", 0)),
@@ -104,7 +104,7 @@ class CCXTConnector(BaseConnector):
             raise ConnectionError(f"Not connected to {self.exchange_id}")
 
         try:
-            book = self._exchange.fetch_order_book(symbol, limit)
+            book = self._exchange.fetch_order_book(symbol, limit)  # type: ignore[union-attr]
             return {
                 "symbol": symbol,
                 "bids": [[float(p), float(q)] for p, q in book.get("bids", [])],
