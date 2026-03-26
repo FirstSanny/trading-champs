@@ -230,6 +230,4 @@ class AlpacaPaperConnector(BaseConnector):
 
     def fetch_order_book(self, symbol: str, limit: int = 20) -> dict:
         """Fetch order book - requires Alpaca Data API."""
-        raise NotImplementedError(
-            "Use Polygon.io or another data provider for order book data."
-        )
+        raise NotImplementedError("Use Polygon.io or another data provider for order book data.")

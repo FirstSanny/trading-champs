@@ -29,11 +29,13 @@ class CCXTConnector(BaseConnector):
         """Initialize CCXT exchange."""
         try:
             exchange_class = getattr(ccxt, self.exchange_id)
-            self._exchange = exchange_class({
-                "apiKey": self.api_key,
-                "secret": self.api_secret,
-                "enableRateLimit": True,
-            })
+            self._exchange = exchange_class(
+                {
+                    "apiKey": self.api_key,
+                    "secret": self.api_secret,
+                    "enableRateLimit": True,
+                }
+            )
             self._connected = True
             logger.info(f"Connected to {self.exchange_id} via CCXT")
         except AttributeError:

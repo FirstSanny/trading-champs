@@ -9,6 +9,7 @@ from typing import Optional, List
 @dataclass
 class PriceBar:
     """OHLCV price bar."""
+
     symbol: str
     timestamp: datetime
     open: float
@@ -22,6 +23,7 @@ class PriceBar:
 @dataclass
 class Tick:
     """Single price tick."""
+
     symbol: str
     timestamp: datetime
     price: float
