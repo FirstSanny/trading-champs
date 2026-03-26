@@ -5,14 +5,15 @@ from typing import Sequence
 
 from trading_champs.signals.detectors.crossover import CrossoverDetector, SignalType
 from trading_champs.signals.detectors.threshold import ThresholdDetector
-from trading_champs.signals.indicators.moving_averages import EMA, SMA
 from trading_champs.signals.indicators.momentum import MACD, RSI
+from trading_champs.signals.indicators.moving_averages import SMA
 from trading_champs.signals.indicators.volatility import BollingerBands
 
 
 @dataclass
 class SignalConfig:
     """Configuration for signal generation."""
+
     fast_ma_period: int = 10
     slow_ma_period: int = 20
     rsi_period: int = 14

@@ -2,15 +2,15 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Sequence
 
-from trading_champs.pl.tracker import Trade, TradeLog, PnLTracker, DailyPnL, TradeSide
 from trading_champs.pl.metrics import MetricsCalculator, PerformanceMetrics
+from trading_champs.pl.tracker import DailyPnL, PnLTracker, Trade, TradeSide
 
 
 @dataclass
 class DashboardData:
     """Data structure for dashboard rendering."""
+
     current_balance: float
     initial_balance: float
     total_realized_pnl: float
@@ -81,16 +81,18 @@ class DashboardProvider:
                 pnl = trade.entry_price - (trade.exit_price or trade.entry_price)
             pnl *= trade.quantity
 
-            open_positions.append({
-                "id": trade.id,
-                "symbol": trade.symbol,
-                "side": trade.side.value,
-                "quantity": trade.quantity,
-                "entry_price": trade.entry_price,
-                "current_price": trade.exit_price or trade.entry_price,
-                "unrealized_pnl": pnl,
-                "entry_time": trade.entry_time.isoformat(),
-            })
+            open_positions.append(
+                {
+                    "id": trade.id,
+                    "symbol": trade.symbol,
+                    "side": trade.side.value,
+                    "quantity": trade.quantity,
+                    "entry_price": trade.entry_price,
+                    "current_price": trade.exit_price or trade.entry_price,
+                    "unrealized_pnl": pnl,
+                    "entry_time": trade.entry_time.isoformat(),
+                }
+            )
 
         return DashboardData(
             current_balance=current_balance,
@@ -98,7 +100,9 @@ class DashboardProvider:
             total_realized_pnl=total_realized,
             total_unrealized_pnl=total_unrealized,
             total_pnl=total_realized + total_unrealized,
-            total_return_percent=(total_realized / initial_balance * 100) if initial_balance > 0 else 0,
+            total_return_percent=(
+                (total_realized / initial_balance * 100) if initial_balance > 0 else 0
+            ),
             daily_pnl=daily_pnl,
             recent_trades=recent_trades,
             performance_metrics=metrics,
@@ -122,10 +126,12 @@ class DashboardProvider:
             date = today - timedelta(days=days - i - 1)
             daily = self.tracker.get_daily_pnl(date)
             running_equity += daily.total_pnl
-            curve.append({
-                "date": date.strftime("%Y-%m-%d"),
-                "equity": running_equity,
-                "daily_pnl": daily.total_pnl,
-            })
+            curve.append(
+                {
+                    "date": date.strftime("%Y-%m-%d"),
+                    "equity": running_equity,
+                    "daily_pnl": daily.total_pnl,
+                }
+            )
 
         return curve

@@ -1,7 +1,7 @@
 """Trading Engine - Core execution engine for trading system"""
 
-from typing import Optional
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +26,4 @@ class TradingEngine:
 
     def execute_order(self, symbol: str, side: str, quantity: float) -> dict:
         """Execute an order"""
-        return {
-            "symbol": symbol,
-            "side": side,
-            "quantity": quantity,
-            "status": "filled"
-        }
+        return {"symbol": symbol, "side": side, "quantity": quantity, "status": "filled"}

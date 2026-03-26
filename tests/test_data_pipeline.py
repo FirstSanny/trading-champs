@@ -1,6 +1,5 @@
 """Tests for the data pipeline."""
 
-import json
 import os
 import tempfile
 from datetime import datetime, timedelta
@@ -8,13 +7,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import redis
-import requests
 
 from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
-from trading_champs.data.connectors.base import BaseConnector, PriceBar
+from trading_champs.data.connectors.base import PriceBar
 from trading_champs.data.connectors.ccxt_connector import CCXTConnector
-from trading_champs.data.storage import MarketDataStorage
 from trading_champs.data.service import DataService
+from trading_champs.data.storage import MarketDataStorage
 
 
 class TestPriceBar:

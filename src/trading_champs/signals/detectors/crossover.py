@@ -6,6 +6,7 @@ from typing import Sequence
 
 class SignalType(Enum):
     """Signal direction type."""
+
     BUY = "buy"
     SELL = "sell"
     NEUTRAL = "neutral"

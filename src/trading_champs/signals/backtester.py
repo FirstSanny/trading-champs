@@ -9,6 +9,7 @@ from trading_champs.signals.detectors.crossover import SignalType
 
 class PositionSide(Enum):
     """Position direction."""
+
     LONG = "long"
     SHORT = "short"
     FLAT = "flat"
@@ -17,6 +18,7 @@ class PositionSide(Enum):
 @dataclass
 class Trade:
     """Represents a single trade."""
+
     entry_index: int
     entry_price: float
     exit_index: int
@@ -29,6 +31,7 @@ class Trade:
 @dataclass
 class BacktestResult:
     """Results from a backtest run."""
+
     trades: list[Trade] = field(default_factory=list)
     total_pnl: float = 0.0
     total_pnl_pct: float = 0.0

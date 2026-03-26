@@ -2,12 +2,12 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Sequence
 
 
 @dataclass
 class PositionSize:
     """Calculated position size."""
+
     units: float
     dollar_risk: float
     risk_percent: float
@@ -33,7 +33,6 @@ class PositionSizer(ABC):
         Returns:
             PositionSize with units, dollar risk, and risk percent.
         """
-        pass
 
 
 class FixedSize(PositionSizer):
@@ -53,7 +52,6 @@ class FixedSize(PositionSizer):
         entry_price: float,
         stop_loss_price: float | None = None,
     ) -> PositionSize:
-        dollar_value = self.units * entry_price
         return PositionSize(
             units=self.units,
             dollar_risk=0.0,

@@ -3,11 +3,11 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Sequence
 
 
 class TradeSide(Enum):
     """Trade direction."""
+
     LONG = "long"
     SHORT = "short"
 
@@ -15,6 +15,7 @@ class TradeSide(Enum):
 @dataclass
 class Trade:
     """Represents a single trade."""
+
     id: str
     symbol: str
     side: TradeSide
@@ -40,7 +41,9 @@ class Trade:
             raw_pnl = (self.entry_price - exit_price) * self.quantity
 
         self.pnl = raw_pnl - self.commission
-        self.pnl_percent = (self.pnl / (self.entry_price * self.quantity)) * 100 if self.entry_price > 0 else 0
+        self.pnl_percent = (
+            (self.pnl / (self.entry_price * self.quantity)) * 100 if self.entry_price > 0 else 0
+        )
 
 
 class TradeLog:
@@ -75,6 +78,7 @@ class TradeLog:
 @dataclass
 class DailyPnL:
     """Daily P&L summary."""
+
     date: datetime
     realized_pnl: float
     unrealized_pnl: float
@@ -209,9 +213,13 @@ class PnLTracker:
 
         realized = sum(t.pnl for t in closed if t.pnl is not None)
         unrealized = sum(
-            (t.exit_price or t.entry_price) - t.entry_price if t.side == TradeSide.LONG
-            else t.entry_price - (t.exit_price or t.entry_price)
-            for t in day_trades if t.exit_price is None
+            (
+                (t.exit_price or t.entry_price) - t.entry_price
+                if t.side == TradeSide.LONG
+                else t.entry_price - (t.exit_price or t.entry_price)
+            )
+            for t in day_trades
+            if t.exit_price is None
         )
 
         wins = sum(1 for t in closed if t.pnl and t.pnl > 0)

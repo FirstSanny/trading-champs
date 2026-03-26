@@ -1,6 +1,5 @@
 """Tests for trading engine"""
 
-import pytest
 from trading_champs.core.engine import TradingEngine
 
 

@@ -70,13 +70,16 @@ def MACD(
     slow_ema = EMA(prices, slow_period)
 
     macd_line = [
-        f - s if f is not None and s is not None else None
-        for f, s in zip(fast_ema, slow_ema)
+        f - s if f is not None and s is not None else None for f, s in zip(fast_ema, slow_ema)
     ]
 
     valid_macd = [v for v in macd_line if v is not None]
     if len(valid_macd) < signal_period:
-        return {"macd": macd_line, "signal": [None] * len(macd_line), "histogram": [None] * len(macd_line)}
+        return {
+            "macd": macd_line,
+            "signal": [None] * len(macd_line),
+            "histogram": [None] * len(macd_line),
+        }
 
     signal_line = EMA(valid_macd, signal_period)
 
@@ -84,8 +87,7 @@ def MACD(
     padded_signal = [None] * (len(macd_line) - len(signal_line)) + signal_line
 
     histogram = [
-        m - s if m is not None and s is not None else None
-        for m, s in zip(macd_line, padded_signal)
+        m - s if m is not None and s is not None else None for m, s in zip(macd_line, padded_signal)
     ]
 
     return {

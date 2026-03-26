@@ -1,11 +1,10 @@
 """Tests for P&L tracking module."""
 
-import pytest
 from datetime import datetime, timedelta
 
-from trading_champs.pl.tracker import Trade, TradeLog, TradeSide, PnLTracker, DailyPnL
-from trading_champs.pl.metrics import MetricsCalculator, PerformanceMetrics
-from trading_champs.pl.dashboard import DashboardProvider, DashboardData
+from trading_champs.pl.dashboard import DashboardData, DashboardProvider
+from trading_champs.pl.metrics import MetricsCalculator
+from trading_champs.pl.tracker import PnLTracker, Trade, TradeLog, TradeSide
 
 
 class TestTradeLog:
@@ -144,9 +143,7 @@ class TestPnLTracker:
         tracker = PnLTracker(initial_balance=10000)
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
-        trade = tracker.open_trade(
-            "AAPL", TradeSide.LONG, 100.0, 10, entry_time=today
-        )
+        trade = tracker.open_trade("AAPL", TradeSide.LONG, 100.0, 10, entry_time=today)
         tracker.close_trade(trade.id, 110.0, exit_time=today + timedelta(hours=2))
 
         daily = tracker.get_daily_pnl(today)

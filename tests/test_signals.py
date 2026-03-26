@@ -1,14 +1,12 @@
 """Tests for signals module."""
 
-import pytest
-
+from trading_champs.signals.backtester import Backtester, BacktestResult
 from trading_champs.signals.detectors.crossover import CrossoverDetector, SignalType
 from trading_champs.signals.detectors.threshold import ThresholdDetector
+from trading_champs.signals.engine import SignalConfig, SignalEngine
 from trading_champs.signals.indicators.momentum import MACD, RSI
 from trading_champs.signals.indicators.moving_averages import EMA, SMA
 from trading_champs.signals.indicators.volatility import BollingerBands
-from trading_champs.signals.backtester import Backtester, BacktestResult, PositionSide, Trade
-from trading_champs.signals.engine import SignalConfig, SignalEngine
 from trading_champs.signals.service import SignalService
 
 
@@ -47,14 +45,46 @@ class TestMomentumIndicators:
     """Tests for momentum indicators."""
 
     def test_rsi_basic(self):
-        prices = [44.0, 44.5, 45.0, 44.8, 44.2, 43.5, 44.0, 44.5, 45.2, 46.0, 46.5, 47.0, 46.8, 46.5, 46.0]
+        prices = [
+            44.0,
+            44.5,
+            45.0,
+            44.8,
+            44.2,
+            43.5,
+            44.0,
+            44.5,
+            45.2,
+            46.0,
+            46.5,
+            47.0,
+            46.8,
+            46.5,
+            46.0,
+        ]
         result = RSI(prices, 14)
 
         assert len(result) == len(prices)
         assert all(v is None or 0 <= v <= 100 for v in result if v is not None)
 
     def test_rsi_oversold(self):
-        declining = [100.0, 95.0, 90.0, 85.0, 80.0, 75.0, 70.0, 65.0, 60.0, 55.0, 50.0, 45.0, 40.0, 35.0, 30.0]
+        declining = [
+            100.0,
+            95.0,
+            90.0,
+            85.0,
+            80.0,
+            75.0,
+            70.0,
+            65.0,
+            60.0,
+            55.0,
+            50.0,
+            45.0,
+            40.0,
+            35.0,
+            30.0,
+        ]
         result = RSI(declining, 14)
 
         valid_values = [v for v in result if v is not None]
@@ -76,6 +106,7 @@ class TestVolatilityIndicators:
 
     def test_bollinger_bands(self):
         import random
+
         random.seed(42)
         prices = [100.0 + random.uniform(-5, 5) for _ in range(30)]
         result = BollingerBands(prices, period=20)
@@ -173,7 +204,13 @@ class TestBacktester:
 
     def test_single_trade(self):
         prices = [100.0, 105.0, 110.0, 115.0, 120.0]
-        signals = [SignalType.NEUTRAL, SignalType.BUY, SignalType.NEUTRAL, SignalType.NEUTRAL, SignalType.SELL]
+        signals = [
+            SignalType.NEUTRAL,
+            SignalType.BUY,
+            SignalType.NEUTRAL,
+            SignalType.NEUTRAL,
+            SignalType.SELL,
+        ]
 
         backtester = Backtester(prices, signals)
         result = backtester.run()
@@ -186,8 +223,12 @@ class TestBacktester:
     def test_win_rate(self):
         prices = [100.0, 110.0, 105.0, 115.0, 110.0, 120.0]
         signals = [
-            SignalType.NEUTRAL, SignalType.BUY, SignalType.SELL,
-            SignalType.NEUTRAL, SignalType.BUY, SignalType.SELL,
+            SignalType.NEUTRAL,
+            SignalType.BUY,
+            SignalType.SELL,
+            SignalType.NEUTRAL,
+            SignalType.BUY,
+            SignalType.SELL,
         ]
 
         backtester = Backtester(prices, signals)

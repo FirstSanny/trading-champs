@@ -1,9 +1,9 @@
 """Tests for web dashboard module."""
 
-import pytest
-from trading_champs.web.app import create_app
-from trading_champs.pl.tracker import PnLTracker, TradeSide
 from datetime import datetime
+
+from trading_champs.pl.tracker import PnLTracker, TradeSide
+from trading_champs.web.app import create_app
 
 
 class TestWebApp:
@@ -20,9 +20,10 @@ class TestWebApp:
         tracker = PnLTracker(initial_balance=50000.0)
         app = create_app(tracker)
         # Verify the app has the tracker in its internal state
-        assert hasattr(app.state, 'tracker') or tracker is not None
+        assert hasattr(app.state, "tracker") or tracker is not None
         # If we can access dashboard data, it means the tracker is configured
         from fastapi.testclient import TestClient
+
         client = TestClient(app)
         response = client.get("/api/dashboard")
         assert response.status_code == 200
@@ -33,6 +34,7 @@ class TestWebApp:
         app = create_app(tracker)
 
         from fastapi.testclient import TestClient
+
         client = TestClient(app)
 
         response = client.get("/api/dashboard")
@@ -52,6 +54,7 @@ class TestWebApp:
         app = create_app(tracker)
 
         from fastapi.testclient import TestClient
+
         client = TestClient(app)
 
         response = client.get("/api/equity-curve")
@@ -66,6 +69,7 @@ class TestWebApp:
         app = create_app(tracker)
 
         from fastapi.testclient import TestClient
+
         client = TestClient(app)
 
         # Create a trade
@@ -95,6 +99,7 @@ class TestWebApp:
         app = create_app(tracker)
 
         from fastapi.testclient import TestClient
+
         client = TestClient(app)
 
         # Open a trade using the tracker directly
@@ -128,6 +133,7 @@ class TestWebApp:
         tracker.close_trade(trade.id, 55000.0, datetime.now())
 
         from fastapi.testclient import TestClient
+
         client = TestClient(app)
 
         response = client.get("/api/trades?status=open")
@@ -141,6 +147,7 @@ class TestWebApp:
         app = create_app(tracker)
 
         from fastapi.testclient import TestClient
+
         client = TestClient(app)
 
         response = client.get("/")

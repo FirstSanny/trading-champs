@@ -2,19 +2,18 @@
 
 import pytest
 
-from trading_champs.risk.position_sizer import FixedSize, PercentRisk, KellyCriterion, PositionSize
-from trading_champs.risk.stop_loss import (
-    FixedStopLoss,
-    FixedTakeProfit,
-    ATRStopLoss,
-    TrailingStopLoss,
-    ExitLevel,
-)
 from trading_champs.risk.portfolio import (
     DrawdownTracker,
     PortfolioRisk,
-    RiskMetrics,
     Position,
+    RiskMetrics,
+)
+from trading_champs.risk.position_sizer import FixedSize, KellyCriterion, PercentRisk
+from trading_champs.risk.stop_loss import (
+    ATRStopLoss,
+    FixedStopLoss,
+    FixedTakeProfit,
+    TrailingStopLoss,
 )
 
 

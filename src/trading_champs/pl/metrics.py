@@ -1,15 +1,15 @@
 """Performance metrics calculation."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Sequence
+from datetime import timedelta
 
-from trading_champs.pl.tracker import Trade, TradeLog, PnLTracker
+from trading_champs.pl.tracker import PnLTracker, Trade
 
 
 @dataclass
 class PerformanceMetrics:
     """Performance metrics summary."""
+
     total_return: float
     total_return_percent: float
     sharpe_ratio: float
@@ -124,12 +124,12 @@ class MetricsCalculator:
 
         avg_return = sum(returns) / len(returns)
         variance = sum((r - avg_return) ** 2 for r in returns) / len(returns)
-        std_dev = variance ** 0.5
+        std_dev = variance**0.5
 
         if std_dev == 0:
             return 0.0
 
-        sharpe = (avg_return - risk_free_rate / 252) / std_dev * (252 ** 0.5)
+        sharpe = (avg_return - risk_free_rate / 252) / std_dev * (252**0.5)
         return sharpe
 
     def _calculate_max_drawdown(self) -> tuple[float, float]:

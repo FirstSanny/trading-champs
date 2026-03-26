@@ -2,12 +2,12 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Sequence
 
 
 @dataclass
 class ExitLevel:
     """Exit level with price and reason."""
+
     price: float
     reason: str
 
@@ -27,7 +27,6 @@ class StopLoss(ABC):
         Returns:
             ExitLevel with stop price and reason.
         """
-        pass
 
 
 class FixedStopLoss(StopLoss):
@@ -59,7 +58,6 @@ class TakeProfit(ABC):
         Returns:
             ExitLevel with target price and reason.
         """
-        pass
 
 
 class FixedTakeProfit(TakeProfit):

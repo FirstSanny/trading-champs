@@ -1,12 +1,12 @@
 """Portfolio risk management and drawdown tracking."""
 
-from dataclasses import dataclass, field
-from typing import Sequence
+from dataclasses import dataclass
 
 
 @dataclass
 class RiskMetrics:
     """Portfolio risk metrics."""
+
     total_equity: float
     peak_equity: float
     current_drawdown: float
@@ -18,6 +18,7 @@ class RiskMetrics:
 @dataclass
 class Position:
     """Open position information."""
+
     symbol: str
     entry_price: float
     current_price: float
@@ -56,7 +57,9 @@ class DrawdownTracker:
             self.peak_equity = current_equity
 
         current_drawdown = self.peak_equity - current_equity
-        current_drawdown_pct = (current_drawdown / self.peak_equity * 100) if self.peak_equity > 0 else 0
+        current_drawdown_pct = (
+            (current_drawdown / self.peak_equity * 100) if self.peak_equity > 0 else 0
+        )
 
         if current_drawdown > self.max_drawdown:
             self.max_drawdown = current_drawdown
@@ -135,12 +138,20 @@ class PortfolioRisk:
         # Check position size limit
         position_fraction = position_value / total_portfolio_value
         if position_fraction > self.max_position_size:
-            return False, f"Position size ({position_fraction:.1%}) exceeds max ({self.max_position_size:.1%})"
+            return (
+                False,
+                f"Position size ({position_fraction:.1%}) "
+                f"exceeds max ({self.max_position_size:.1%})",
+            )
 
         # Check total exposure
         total_fraction = position_value / total_portfolio_value
         if total_fraction > self.max_total_exposure:
-            return False, f"Total exposure ({total_fraction:.1%}) exceeds max ({self.max_total_exposure:.1%})"
+            return (
+                False,
+                f"Total exposure ({total_fraction:.1%}) "
+                f"exceeds max ({self.max_total_exposure:.1%})",
+            )
 
         return True, "OK"
 
