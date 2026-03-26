@@ -21,7 +21,8 @@ jobs:
       - name: Install dependencies
         run: |
           pip install build
-          pip install -r requirements.txt
+          pip install --no-cache-dir -r requirements.txt
+          pip install --no-cache-dir -e ".[dev]"
 
       - name: Run tests
         run: pytest
