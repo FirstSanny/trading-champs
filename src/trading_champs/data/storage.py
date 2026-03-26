@@ -101,7 +101,7 @@ class MarketDataStorage:
         if not data:
             return None
 
-        parsed = json.loads(data)
+        parsed = json.loads(data)  # type: ignore[arg-type]
         return PriceBar(
             symbol=parsed["symbol"],
             timestamp=datetime.fromisoformat(parsed["timestamp"]),

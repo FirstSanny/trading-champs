@@ -3,7 +3,7 @@
 import logging
 import os
 from decimal import Decimal
-from typing import Any, Optional, List
+from typing import Any, List, Optional
 
 import requests
 

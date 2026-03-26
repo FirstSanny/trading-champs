@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Any, Optional, List
+from typing import Any, List, Optional
 
 import ccxt
 
