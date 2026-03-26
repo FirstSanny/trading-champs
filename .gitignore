@@ -70,5 +70,5 @@ Thumbs.db
 # Project specific
 *.log
 *.tmp
-data/
+/data/
 *.sqlite
