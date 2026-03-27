@@ -1,12 +1,11 @@
 """Vercel serverless function for Trading Champs Dashboard using Starlette ASGI."""
 
 import json
-import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 from datetime import datetime
+from typing import Any, cast
 
 # Add src to path for imports
 _project_root = Path(__file__).parent.parent
@@ -21,6 +20,7 @@ from trading_champs.pl.dashboard import DashboardProvider, DashboardData
 from trading_champs.pl.tracker import PnLTracker, TradeSide, Trade, DailyPnL
 from trading_champs.pl.metrics import PerformanceMetrics
 from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.routing import Route
 
@@ -74,7 +74,7 @@ def _serialize_trade(trade: Trade) -> dict:
 _dashboard_html = None
 
 
-def get_dashboard_html():
+def get_dashboard_html() -> str:
     """Lazily load the dashboard HTML."""
     global _dashboard_html
     if _dashboard_html is None:
@@ -88,14 +88,14 @@ tracker = PnLTracker(initial_balance=10000.0)
 provider = DashboardProvider(tracker)
 
 
-def parse_post_body(body: str, content_type: str = "") -> dict:
+def parse_post_body(body: str, content_type: str = "") -> dict[str, str]:
     """Parse POST body as JSON or form data."""
     if not body:
         return {}
     if "application/json" in content_type:
-        return json.loads(body)
+        return cast(dict[str, str], json.loads(body))
     # Form data
-    result = {}
+    result: dict[str, str] = {}
     for pair in body.split("&"):
         if "=" in pair:
             key, value = pair.split("=", 1)
@@ -103,12 +103,12 @@ def parse_post_body(body: str, content_type: str = "") -> dict:
     return result
 
 
-async def dashboard(request):
+async def dashboard(request: Request) -> HTMLResponse:
     """Serve the dashboard HTML."""
     return HTMLResponse(content=get_dashboard_html())
 
 
-async def dashboard_api(request):
+async def dashboard_api(request: Request) -> JSONResponse:
     """Return dashboard data as JSON."""
     query_params = request.query_params
     days = int(query_params.get("days", [30])[0])
@@ -116,7 +116,7 @@ async def dashboard_api(request):
     return JSONResponse(content=data)
 
 
-async def equity_curve_api(request):
+async def equity_curve_api(request: Request) -> JSONResponse:
     """Return equity curve data as JSON."""
     query_params = request.query_params
     days = int(query_params.get("days", [30])[0])
@@ -124,7 +124,7 @@ async def equity_curve_api(request):
     return JSONResponse(content=data)
 
 
-async def trades_api(request):
+async def trades_api(request: Request) -> JSONResponse:
     """Handle trades API endpoint."""
     if request.method == "POST":
         body = await request.body()
@@ -158,7 +158,7 @@ async def trades_api(request):
     return JSONResponse(content={"error": "Method not allowed"}, status_code=405)
 
 
-async def close_trade_api(request):
+async def close_trade_api(request: Request) -> JSONResponse:
     """Handle close trade API endpoint."""
     path_parts = request.url.path.split("/")
     trade_id = path_parts[3] if len(path_parts) >= 4 else None
@@ -183,7 +183,7 @@ async def close_trade_api(request):
     return JSONResponse(content={"error": "Method not allowed"}, status_code=405)
 
 
-async def not_found(request):
+async def not_found(request: Request) -> JSONResponse:
     """Handle 404 Not Found."""
     return JSONResponse(content={"error": "Not found"}, status_code=404)
 
