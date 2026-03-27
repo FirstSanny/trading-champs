@@ -1,3 +1,7 @@
+# Web framework
+starlette>=0.27.0
+vercel>=0.1.0
+
 # Trading and data
 pandas>=2.0.0
 numpy>=1.24.0
