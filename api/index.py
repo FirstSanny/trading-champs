@@ -15,6 +15,13 @@ if _src_path.exists():
 else:
     sys.path.insert(0, str(_project_root / "src"))
 
+# Try to import vercel.asgi for Vercel deployment
+try:
+    from vercel.asgi import VercelASGI
+    _HAS_VERCEL_ASGI = True
+except ImportError:
+    _HAS_VERCEL_ASGI = False
+
 # Late imports to ensure path is set
 from trading_champs.pl.dashboard import DashboardProvider, DashboardData
 from trading_champs.pl.tracker import PnLTracker, TradeSide, Trade, DailyPnL
@@ -198,4 +205,13 @@ routes = [
 ]
 
 # Create the ASGI app
-app = Starlette(routes=routes)
+starlette_app = Starlette(routes=routes)
+
+# Wrap with VercelASGI for Vercel deployment, or export raw app for local
+if _HAS_VERCEL_ASGI:
+    app = VercelASGI(starlette_app)
+else:
+    app = starlette_app
+
+# For local development with uvicorn
+handler = app
