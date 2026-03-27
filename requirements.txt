@@ -1,7 +1,6 @@
 # Trading and data
 pandas>=2.0.0
 numpy>=1.24.0
-ta-lib>=0.4.28
 
 # Data ingestion
 ccxt>=4.0.0
