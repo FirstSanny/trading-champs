@@ -207,11 +207,5 @@ routes = [
 # Create the ASGI app
 starlette_app = Starlette(routes=routes)
 
-# Wrap with VercelASGI for Vercel deployment, or export raw app for local
-if _HAS_VERCEL_ASGI:
-    app = VercelASGI(starlette_app)
-else:
-    app = starlette_app
-
-# For local development with uvicorn
-handler = app
+# Export app - VercelASGI wrapper applied at runtime if available
+app = starlette_app
