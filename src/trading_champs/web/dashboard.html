@@ -23,9 +23,9 @@
         .metric-value { font-size: 24px; font-weight: 600; }
         .positive { color: #00ba7c; }
         .negative { color: #f4212e; }
-        .chart { background: #1c1f23; border-radius: 12px; padding: 20px; margin-bottom: 24px; border: 1px solid #2f3336; }
+        .chart { background: #1c1f23; border-radius: 12px; padding: 20px; margin-bottom: 24px; border: 1px solid #2f3336; overflow: hidden; max-width: 100%; }
         .chart-title { font-size: 16px; margin-bottom: 16px; color: #71767b; }
-        canvas { width: 100% !important; }
+        .chart canvas { width: 100% !important; max-width: 100%; }
         .trades { background: #1c1f23; border-radius: 12px; padding: 20px; border: 1px solid #2f3336; overflow-x: hidden; }
         .trade { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #2f3336; gap: 8px; flex-wrap: wrap; }
         .trade:last-child { border-bottom: none; }
@@ -118,7 +118,7 @@
         function initCharts() {
             var commonOpts = {
                 responsive: true,
-                maintainAspectRatio: false,
+                maintainAspectRatio: true,
                 plugins: { legend: { display: false } },
                 scales: {
                     x: { grid: { color: '#2f3336' }, ticks: { color: '#71767b' } },
