@@ -191,8 +191,10 @@ class TestAlpacaPaperConnector:
         with pytest.raises(ConnectionError, match="Not connected"):
             connector.get_account()
 
+    @patch("trading_champs.data.connectors.alpaca_connector.os.getenv")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.get")
-    def test_connect_success(self, mock_get):
+    def test_connect_success(self, mock_get, mock_getenv):
+        mock_getenv.return_value = "test_key"
         mock_response = MagicMock()
         mock_response.json.return_value = {"account_number": "PAPER-123", "cash": "10000"}
         mock_response.raise_for_status = MagicMock()
@@ -203,8 +205,10 @@ class TestAlpacaPaperConnector:
         assert connector.is_connected()
         assert connector._account["account_number"] == "PAPER-123"
 
+    @patch("trading_champs.data.connectors.alpaca_connector.os.getenv")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.get")
-    def test_get_account(self, mock_get):
+    def test_get_account(self, mock_get, mock_getenv):
+        mock_getenv.return_value = "test_key"
         mock_response = MagicMock()
         mock_response.json.return_value = {"account_number": "PAPER-123", "cash": "10000"}
         mock_response.raise_for_status = MagicMock()
@@ -215,8 +219,10 @@ class TestAlpacaPaperConnector:
         account = connector.get_account()
         assert account["account_number"] == "PAPER-123"
 
+    @patch("trading_champs.data.connectors.alpaca_connector.os.getenv")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.get")
-    def test_get_positions(self, mock_get):
+    def test_get_positions(self, mock_get, mock_getenv):
+        mock_getenv.return_value = "test_key"
         # First call is connect(), second call is get_positions()
         mock_account_response = MagicMock()
         mock_account_response.json.return_value = {"account_number": "PAPER-123", "cash": "10000"}
@@ -237,9 +243,11 @@ class TestAlpacaPaperConnector:
         assert len(positions) == 2
         assert positions[0]["symbol"] == "AAPL"
 
+    @patch("trading_champs.data.connectors.alpaca_connector.os.getenv")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.get")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.post")
-    def test_submit_market_order(self, mock_post, mock_get):
+    def test_submit_market_order(self, mock_post, mock_get, mock_getenv):
+        mock_getenv.return_value = "test_key"
         mock_get_response = MagicMock()
         mock_get_response.json.return_value = {"account_number": "PAPER-123", "cash": "10000"}
         mock_get_response.raise_for_status = MagicMock()
@@ -265,9 +273,11 @@ class TestAlpacaPaperConnector:
         assert order["symbol"] == "AAPL"
         mock_post.assert_called_once()
 
+    @patch("trading_champs.data.connectors.alpaca_connector.os.getenv")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.get")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.post")
-    def test_submit_limit_order(self, mock_post, mock_get):
+    def test_submit_limit_order(self, mock_post, mock_get, mock_getenv):
+        mock_getenv.return_value = "test_key"
         mock_get_response = MagicMock()
         mock_get_response.json.return_value = {"account_number": "PAPER-123", "cash": "10000"}
         mock_get_response.raise_for_status = MagicMock()
@@ -296,9 +306,11 @@ class TestAlpacaPaperConnector:
         call_args = mock_post.call_args
         assert float(call_args[1]["json"]["limit_price"]) == 150.00
 
+    @patch("trading_champs.data.connectors.alpaca_connector.os.getenv")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.get")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.delete")
-    def test_cancel_order(self, mock_delete, mock_get):
+    def test_cancel_order(self, mock_delete, mock_get, mock_getenv):
+        mock_getenv.return_value = "test_key"
         mock_get_response = MagicMock()
         mock_get_response.json.return_value = {"account_number": "PAPER-123", "cash": "10000"}
         mock_get_response.raise_for_status = MagicMock()
@@ -313,8 +325,10 @@ class TestAlpacaPaperConnector:
         connector.cancel_order("order-123")
         mock_delete.assert_called_once()
 
+    @patch("trading_champs.data.connectors.alpaca_connector.os.getenv")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.get")
-    def test_fetch_ohlcv_not_implemented(self, mock_get):
+    def test_fetch_ohlcv_not_implemented(self, mock_get, mock_getenv):
+        mock_getenv.return_value = "test_key"
         mock_get_response = MagicMock()
         mock_get_response.json.return_value = {"account_number": "PAPER-123", "cash": "10000"}
         mock_get_response.raise_for_status = MagicMock()
@@ -325,8 +339,10 @@ class TestAlpacaPaperConnector:
         with pytest.raises(NotImplementedError, match="Alpaca trading API does not provide"):
             connector.fetch_ohlcv("AAPL")
 
+    @patch("trading_champs.data.connectors.alpaca_connector.os.getenv")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.get")
-    def test_fetch_ticker_not_implemented(self, mock_get):
+    def test_fetch_ticker_not_implemented(self, mock_get, mock_getenv):
+        mock_getenv.return_value = "test_key"
         mock_get_response = MagicMock()
         mock_get_response.json.return_value = {"account_number": "PAPER-123", "cash": "10000"}
         mock_get_response.raise_for_status = MagicMock()
@@ -337,8 +353,10 @@ class TestAlpacaPaperConnector:
         with pytest.raises(NotImplementedError, match="Alpaca trading API does not provide"):
             connector.fetch_ticker("AAPL")
 
+    @patch("trading_champs.data.connectors.alpaca_connector.os.getenv")
     @patch("trading_champs.data.connectors.alpaca_connector.requests.get")
-    def test_fetch_order_book_not_implemented(self, mock_get):
+    def test_fetch_order_book_not_implemented(self, mock_get, mock_getenv):
+        mock_getenv.return_value = "test_key"
         mock_get_response = MagicMock()
         mock_get_response.json.return_value = {"account_number": "PAPER-123", "cash": "10000"}
         mock_get_response.raise_for_status = MagicMock()

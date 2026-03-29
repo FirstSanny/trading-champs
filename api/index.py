@@ -4,7 +4,7 @@ import json
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, cast
 
 # Add src to path for imports
@@ -61,11 +61,13 @@ def serialize_dashboard_data(data: DashboardData) -> dict:
         "open_positions": data.open_positions,
         "alpaca_connected": data.alpaca_connected,
         "alpaca_account": data.alpaca_account,
+        "mode": data.mode,
     }
 
 
 def _serialize_trade(trade: Trade) -> dict:
     """Convert Trade to JSON-serializable dict."""
+    status = "open" if trade.exit_price is None else "closed"
     return {
         "id": trade.id,
         "symbol": trade.symbol,
@@ -77,7 +79,7 @@ def _serialize_trade(trade: Trade) -> dict:
         "exit_time": trade.exit_time.isoformat() if isinstance(trade.exit_time, datetime) else trade.exit_time,
         "pnl": trade.pnl,
         "pnl_percent": trade.pnl_percent,
-        "status": trade.status.value if hasattr(trade.status, 'value') else str(trade.status),
+        "status": status,
     }
 
 
@@ -98,17 +100,80 @@ def get_dashboard_html() -> str:
 tracker = PnLTracker(initial_balance=10000.0)
 provider = DashboardProvider(tracker)
 
-# Try to set up Alpaca connector for live data (credentials may not be available locally)
-def _setup_alpaca() -> None:
+
+def _fetch_alpaca_trades(mode: str = "paper") -> None:
+    """Fetch actual trades from Alpaca and populate the tracker."""
+    import os
+    # Only fetch from Alpaca if credentials are available
+    key_env = f"ALPACA_{mode.upper()}_API_KEY"
+    secret_env = f"ALPACA_{mode.upper()}_API_SECRET"
+    if not os.environ.get(key_env) or not os.environ.get(secret_env):
+        return
+    if tracker.trade_log.trades:
+        return  # Already has trades
+
     try:
-        from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
-        connector = AlpacaPaperConnector()
+        from trading_champs.data.connectors.alpaca_connector import AlpacaConnector
+        connector = AlpacaConnector(mode=mode)
         connector.connect()
+
+        # Fetch closed orders from Alpaca
+        orders = connector.get_orders(status="closed", limit=100)
+
+        for order in orders:
+            side = TradeSide.LONG if order.get("side") == "buy" else TradeSide.SHORT
+            filled_qty = float(order.get("filled_qty", 0))
+            if filled_qty <= 0:
+                continue
+
+            entry_price = float(order.get("filled_avg_price", 0))
+            if entry_price <= 0:
+                continue
+
+            # Parse timestamps
+            created_at = order.get("created_at", "")
+            if created_at:
+                from dateutil import parser  # type: ignore[import-untyped]
+                entry_time = parser.parse(created_at)
+            else:
+                entry_time = datetime.now()
+
+            closed_at = order.get("filled_at", "") or order.get("closed_at", "")
+            exit_price = entry_price
+            exit_time = None
+            if closed_at:
+                from dateutil import parser
+                exit_time = parser.parse(closed_at)
+
+            trade = tracker.open_trade(
+                symbol=order.get("symbol"),
+                side=side,
+                entry_price=entry_price,
+                quantity=filled_qty,
+                entry_time=entry_time,
+            )
+            if exit_time:
+                tracker.close_trade(trade.id, exit_price, exit_time)
+
         provider.set_alpaca_connector(connector)
     except Exception:
-        pass  # Alpaca not available (e.g., missing credentials in dev)
+        pass  # Alpaca not available
 
-_setup_alpaca()
+
+# Current Alpaca mode (paper or live)
+_current_alpaca_mode = "paper"
+
+
+def _refresh_alpaca_trades(mode: str = "paper") -> None:
+    """Refresh trades from Alpaca for the specified mode."""
+    global _current_alpaca_mode
+    _current_alpaca_mode = mode
+    # Reset tracker and re-fetch
+    tracker.trade_log.trades.clear()
+    _fetch_alpaca_trades(mode)
+
+
+_fetch_alpaca_trades()
 
 # Trading loop singleton (lazily initialized)
 _loop_instance: TradingLoop | None = None
@@ -164,7 +229,13 @@ async def dashboard_api(request: Request) -> JSONResponse:
     """Return dashboard data as JSON."""
     query_params = request.query_params
     days = int(query_params.get("days", [30])[0])
-    data = serialize_dashboard_data(provider.get_dashboard_data(days))
+    mode = query_params.get("mode", ["paper"])[0]
+
+    # Check if mode changed - re-fetch trades if needed
+    if mode != _current_alpaca_mode:
+        _refresh_alpaca_trades(mode)
+
+    data = serialize_dashboard_data(provider.get_dashboard_data(days, mode))
     return JSONResponse(content=data)
 
 
@@ -172,8 +243,35 @@ async def equity_curve_api(request: Request) -> JSONResponse:
     """Return equity curve data as JSON."""
     query_params = request.query_params
     days = int(query_params.get("days", [30])[0])
-    data = provider.get_equity_curve(days)
+    mode = query_params.get("mode", ["paper"])[0]
+    strategy = query_params.get("strategy", [None])[0]
+
+    # Check if mode changed - re-fetch trades if needed
+    if mode != _current_alpaca_mode:
+        _refresh_alpaca_trades(mode)
+
+    data = provider.get_equity_curve(days, mode, strategy)
     return JSONResponse(content=data)
+
+
+async def strategy_curves_api(request: Request) -> JSONResponse:
+    """Return equity curve data for all strategies as JSON."""
+    query_params = request.query_params
+    days = int(query_params.get("days", [30])[0])
+    mode = query_params.get("mode", ["paper"])[0]
+
+    # Check if mode changed - re-fetch trades if needed
+    if mode != _current_alpaca_mode:
+        _refresh_alpaca_trades(mode)
+
+    data = provider.get_strategy_equity_curves(days, mode)
+    return JSONResponse(content=data)
+
+
+async def strategies_api(request: Request) -> JSONResponse:
+    """Return list of all strategies as JSON."""
+    strategies = provider.get_strategies()
+    return JSONResponse(content={"strategies": strategies})
 
 
 async def trades_api(request: Request) -> JSONResponse:
@@ -352,6 +450,8 @@ routes = [
     Route("/", dashboard),
     Route("/api/dashboard", dashboard_api),
     Route("/api/equity-curve", equity_curve_api),
+    Route("/api/strategy-curves", strategy_curves_api),
+    Route("/api/strategies", strategies_api),
     Route("/api/trades", trades_api),
     Route("/api/trades/{trade_id}/close", close_trade_api),
     Route("/api/account", account_api),
