@@ -101,16 +101,34 @@ tracker = PnLTracker(initial_balance=10000.0)
 provider = DashboardProvider(tracker)
 
 
-def _fetch_alpaca_trades(mode: str = "paper") -> None:
-    """Fetch actual trades from Alpaca and populate the tracker."""
+def _check_alpaca_credentials(mode: str) -> tuple[bool, str | None]:
+    """Check if Alpaca credentials are configured for the given mode.
+
+    Returns (ok, error_message).
+    """
+    import os
+    key_env = f"ALPACA_{mode.upper()}_API_KEY"
+    secret_env = f"ALPACA_{mode.upper()}_API_SECRET"
+    if not os.environ.get(key_env):
+        return False, f"${key_env} environment variable is not set"
+    if not os.environ.get(secret_env):
+        return False, f"${secret_env} environment variable is not set"
+    return True, None
+
+
+def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
+    """Fetch actual trades from Alpaca and populate the tracker.
+
+    Returns (success, error_message).
+    """
     import os
     # Only fetch from Alpaca if credentials are available
     key_env = f"ALPACA_{mode.upper()}_API_KEY"
     secret_env = f"ALPACA_{mode.upper()}_API_SECRET"
     if not os.environ.get(key_env) or not os.environ.get(secret_env):
-        return
+        return False, f"Alpaca {mode} credentials not configured"
     if tracker.trade_log.trades:
-        return  # Already has trades
+        return True, None  # Already has trades, nothing to do
 
     try:
         from trading_champs.data.connectors.alpaca_connector import AlpacaConnector
@@ -156,21 +174,31 @@ def _fetch_alpaca_trades(mode: str = "paper") -> None:
                 tracker.close_trade(trade.id, exit_price, exit_time)
 
         provider.set_alpaca_connector(connector)
+        return True, None
     except Exception:
-        pass  # Alpaca not available
+        return False, f"Alpaca {mode} fetch failed"
 
 
 # Current Alpaca mode (paper or live)
 _current_alpaca_mode = "paper"
 
 
-def _refresh_alpaca_trades(mode: str = "paper") -> None:
-    """Refresh trades from Alpaca for the specified mode."""
+def _refresh_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
+    """Refresh trades from Alpaca for the specified mode.
+
+    Returns (success, error_message).
+    """
     global _current_alpaca_mode
+
+    # Validate credentials before wiping tracker state
+    ok, err = _check_alpaca_credentials(mode)
+    if not ok:
+        return False, err
+
     _current_alpaca_mode = mode
     # Reset tracker and re-fetch
     tracker.trade_log.trades.clear()
-    _fetch_alpaca_trades(mode)
+    return _fetch_alpaca_trades(mode)
 
 
 _fetch_alpaca_trades()
@@ -231,11 +259,18 @@ async def dashboard_api(request: Request) -> JSONResponse:
     days = int(query_params.get("days", [30])[0])
     mode = query_params.get("mode", ["paper"])[0]
 
+    error_message = None
     # Check if mode changed - re-fetch trades if needed
     if mode != _current_alpaca_mode:
-        _refresh_alpaca_trades(mode)
+        ok, err = _refresh_alpaca_trades(mode)
+        if not ok:
+            error_message = err
+            # Fall back to current mode's data instead of leaving tracker empty
+            mode = _current_alpaca_mode
 
     data = serialize_dashboard_data(provider.get_dashboard_data(days, mode))
+    if error_message:
+        data["error"] = error_message
     return JSONResponse(content=data)
 
 
@@ -248,7 +283,9 @@ async def equity_curve_api(request: Request) -> JSONResponse:
 
     # Check if mode changed - re-fetch trades if needed
     if mode != _current_alpaca_mode:
-        _refresh_alpaca_trades(mode)
+        ok, _ = _refresh_alpaca_trades(mode)
+        if not ok:
+            mode = _current_alpaca_mode
 
     data = provider.get_equity_curve(days, mode, strategy)
     return JSONResponse(content=data)
@@ -262,7 +299,9 @@ async def strategy_curves_api(request: Request) -> JSONResponse:
 
     # Check if mode changed - re-fetch trades if needed
     if mode != _current_alpaca_mode:
-        _refresh_alpaca_trades(mode)
+        ok, _ = _refresh_alpaca_trades(mode)
+        if not ok:
+            mode = _current_alpaca_mode
 
     data = provider.get_strategy_equity_curves(days, mode)
     return JSONResponse(content=data)
