@@ -40,7 +40,7 @@ class AlpacaPaperConnector(BaseConnector):
         """Verify API credentials and fetch account info."""
         try:
             response = requests.get(
-                f"{self.base_url}/v2/account",
+                f"{self.base_url}/account",
                 headers=HEADERS,
                 timeout=10,
             )
@@ -68,7 +68,7 @@ class AlpacaPaperConnector(BaseConnector):
 
         try:
             response = requests.get(
-                f"{self.base_url}/v2/account",
+                f"{self.base_url}/account",
                 headers=HEADERS,
                 timeout=10,
             )
@@ -85,7 +85,7 @@ class AlpacaPaperConnector(BaseConnector):
 
         try:
             response = requests.get(
-                f"{self.base_url}/v2/positions",
+                f"{self.base_url}/positions",
                 headers=HEADERS,
                 timeout=10,
             )
@@ -102,7 +102,7 @@ class AlpacaPaperConnector(BaseConnector):
 
         try:
             response = requests.get(
-                f"{self.base_url}/v2/positions/{symbol}",
+                f"{self.base_url}/positions/{symbol}",
                 headers=HEADERS,
                 timeout=10,
             )
@@ -152,7 +152,7 @@ class AlpacaPaperConnector(BaseConnector):
 
         try:
             response = requests.post(
-                f"{self.base_url}/v2/orders",
+                f"{self.base_url}/orders",
                 json=order_payload,
                 headers=HEADERS,
                 timeout=10,
@@ -179,7 +179,7 @@ class AlpacaPaperConnector(BaseConnector):
 
         try:
             response = requests.get(
-                f"{self.base_url}/v2/orders",
+                f"{self.base_url}/orders",
                 params={"status": status, "limit": limit},  # type: ignore[arg-type]
                 headers=HEADERS,
                 timeout=10,
@@ -197,7 +197,7 @@ class AlpacaPaperConnector(BaseConnector):
 
         try:
             response = requests.delete(
-                f"{self.base_url}/v2/orders/{order_id}",
+                f"{self.base_url}/orders/{order_id}",
                 headers=HEADERS,
                 timeout=10,
             )

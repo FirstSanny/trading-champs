@@ -66,6 +66,29 @@ class MarketDataStorage:
             CREATE INDEX IF NOT EXISTS idx_price_bars_symbol_time
             ON price_bars(symbol, timestamp DESC)
         """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS backtest_results (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                strategy_name TEXT NOT NULL,
+                run_at TEXT NOT NULL,
+                initial_capital REAL NOT NULL,
+                final_capital REAL NOT NULL,
+                total_pnl REAL NOT NULL,
+                total_pnl_pct REAL NOT NULL,
+                win_rate REAL NOT NULL,
+                num_trades INTEGER NOT NULL,
+                num_wins INTEGER NOT NULL,
+                num_losses INTEGER NOT NULL,
+                params_json TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(symbol, strategy_name, run_at)
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_backtest_results_symbol_strategy
+            ON backtest_results(symbol, strategy_name DESC)
+        """)
         conn.commit()
         conn.close()
         logger.info("Database initialized")
@@ -193,4 +216,124 @@ class MarketDataStorage:
                 quote_volume=row[7],
             )
             for row in reversed(rows)
+        ]
+
+    def save_backtest_result(
+        self,
+        symbol: str,
+        strategy_name: str,
+        initial_capital: float,
+        result: "BacktestResult",
+        params: dict,
+    ) -> int:
+        """Save a backtest result to SQLite.
+
+        Args:
+            symbol: Trading symbol (e.g., 'BTC/USD').
+            strategy_name: Name of the strategy (e.g., 'ma_crossover_5_15').
+            initial_capital: Starting capital for the backtest.
+            result: BacktestResult object with trade history.
+            params: Strategy parameters as a dictionary.
+
+        Returns:
+            Number of rows inserted/updated.
+        """
+        from trading_champs.signals.backtester import BacktestResult
+
+        conn = sqlite3.connect(self._db_path)
+        cursor = conn.cursor()
+
+        final_capital = initial_capital + result.total_pnl
+        run_at = datetime.utcnow().isoformat()
+        params_json = json.dumps(params)
+
+        try:
+            cursor.execute(
+                """
+                INSERT INTO backtest_results
+                (symbol, strategy_name, run_at, initial_capital, final_capital,
+                 total_pnl, total_pnl_pct, win_rate, num_trades, num_wins, num_losses, params_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    symbol,
+                    strategy_name,
+                    run_at,
+                    initial_capital,
+                    final_capital,
+                    result.total_pnl,
+                    result.total_pnl_pct,
+                    result.win_rate,
+                    result.num_trades,
+                    result.num_wins,
+                    result.num_losses,
+                    params_json,
+                ),
+            )
+            count = cursor.rowcount
+        except Exception as e:
+            logger.warning(f"Failed to save backtest result: {e}")
+            count = 0
+
+        conn.commit()
+        conn.close()
+        logger.info(f"Saved backtest result: {strategy_name} for {symbol}")
+        return count
+
+    def get_backtest_results(
+        self,
+        symbol: str,
+        strategy_name: str | None = None,
+        limit: int = 100,
+    ) -> List[dict]:
+        """Query backtest results from SQLite.
+
+        Args:
+            symbol: Trading symbol.
+            strategy_name: Optional strategy name filter.
+            limit: Maximum number of results.
+
+        Returns:
+            List of backtest result dictionaries.
+        """
+        conn = sqlite3.connect(self._db_path)
+        cursor = conn.cursor()
+
+        query = """
+            SELECT id, symbol, strategy_name, run_at, initial_capital, final_capital,
+                   total_pnl, total_pnl_pct, win_rate, num_trades, num_wins, num_losses,
+                   params_json, created_at
+            FROM backtest_results WHERE symbol = ?
+        """
+        params: List = [symbol]
+
+        if strategy_name:
+            query += " AND strategy_name = ?"
+            params.append(strategy_name)
+
+        query += " ORDER BY run_at DESC LIMIT ?"
+        params.append(limit)
+
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        conn.close()
+
+        return [
+            {
+                "id": row[0],
+                "symbol": row[1],
+                "strategy_name": row[2],
+                "run_at": row[3],
+                "initial_capital": row[4],
+                "final_capital": row[5],
+                "total_pnl": row[6],
+                "total_pnl_pct": row[7],
+                "win_rate": row[8],
+                "num_trades": row[9],
+                "num_wins": row[10],
+                "num_losses": row[11],
+                "params": json.loads(row[12]),
+                "created_at": row[13],
+            }
+            for row in rows
         ]
