@@ -26,6 +26,8 @@ except ImportError:
 from trading_champs.pl.dashboard import DashboardProvider, DashboardData
 from trading_champs.pl.tracker import PnLTracker, TradeSide, Trade, DailyPnL
 from trading_champs.pl.metrics import PerformanceMetrics
+from trading_champs.core.loop import TradingLoop
+from trading_champs.core.loop_state import LoopConfig, LoopStateStore
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
@@ -57,6 +59,8 @@ def serialize_dashboard_data(data: DashboardData) -> dict:
         "recent_trades": [_serialize_trade(t) for t in data.recent_trades] if data.recent_trades else [],
         "performance_metrics": asdict(data.performance_metrics) if data.performance_metrics else None,
         "open_positions": data.open_positions,
+        "alpaca_connected": data.alpaca_connected,
+        "alpaca_account": data.alpaca_account,
     }
 
 
@@ -93,6 +97,47 @@ def get_dashboard_html() -> str:
 # Create tracker and provider
 tracker = PnLTracker(initial_balance=10000.0)
 provider = DashboardProvider(tracker)
+
+# Try to set up Alpaca connector for live data (credentials may not be available locally)
+def _setup_alpaca() -> None:
+    try:
+        from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
+        connector = AlpacaPaperConnector()
+        connector.connect()
+        provider.set_alpaca_connector(connector)
+    except Exception:
+        pass  # Alpaca not available (e.g., missing credentials in dev)
+
+_setup_alpaca()
+
+# Trading loop singleton (lazily initialized)
+_loop_instance: TradingLoop | None = None
+
+
+def get_loop() -> TradingLoop:
+    """Get or create the trading loop singleton."""
+    global _loop_instance
+    if _loop_instance is None:
+        import os
+
+        symbols_raw = os.environ.get("LOOP_SYMBOLS", "BTC/USDT")
+        symbols = [s.strip() for s in symbols_raw.split(",") if s.strip()]
+        config = LoopConfig(
+            symbols=symbols,
+            strategy=os.environ.get("LOOP_STRATEGY", "ma_crossover"),
+            interval_seconds=int(os.environ.get("LOOP_INTERVAL_SECONDS", "60")),
+            position_size_fraction=float(os.environ.get("LOOP_POSITION_SIZE", "0.1")),
+            max_positions=int(os.environ.get("LOOP_MAX_POSITIONS", "1")),
+            stop_loss_percent=float(os.environ.get("LOOP_STOP_LOSS_PCT", "2.0")),
+            take_profit_percent=float(os.environ.get("LOOP_TAKE_PROFIT_PCT", "4.0")),
+            exchange=os.environ.get("LOOP_EXCHANGE", "binance"),
+            timeframe=os.environ.get("LOOP_TIMEFRAME", "1m"),
+        )
+        _loop_instance = TradingLoop(
+            config=config,
+            tracker=tracker,
+        )
+    return _loop_instance
 
 
 def parse_post_body(body: str, content_type: str = "") -> dict[str, str]:
@@ -195,6 +240,113 @@ async def not_found(request: Request) -> JSONResponse:
     return JSONResponse(content={"error": "Not found"}, status_code=404)
 
 
+async def loop_start(request: Request) -> JSONResponse:
+    """Start the trading loop."""
+    loop = get_loop()
+    loop.start()
+    return JSONResponse(content={"status": "started", "loop": loop.get_status()})
+
+
+async def loop_stop(request: Request) -> JSONResponse:
+    """Stop the trading loop."""
+    loop = get_loop()
+    loop.stop()
+    return JSONResponse(content={"status": "stopped", "loop": loop.get_status()})
+
+
+async def loop_status(request: Request) -> JSONResponse:
+    """Get trading loop status."""
+    loop = get_loop()
+    return JSONResponse(content=loop.get_status())
+
+
+async def loop_iterate(request: Request) -> JSONResponse:
+    """Run one iteration of the trading loop.
+
+    This is the main endpoint called by Vercel Cron or an external scheduler.
+    Each call runs one complete fetch → signal → execute cycle.
+    """
+    loop = get_loop()
+    try:
+        result = loop.iterate()
+        return JSONResponse(content=result)
+    except Exception as e:
+        return JSONResponse(
+            content={"error": str(e), "timestamp": datetime.now().isoformat()},
+            status_code=500,
+        )
+
+
+def _get_alpaca_connector() -> "AlpacaPaperConnector":  # type: ignore[name-defined]
+    """Get or create an Alpaca connector for dashboard queries."""
+    from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
+    connector = AlpacaPaperConnector()
+    connector.connect()
+    return connector
+
+
+async def account_api(request: Request) -> JSONResponse:
+    """Return live Alpaca account data."""
+    try:
+        connector = _get_alpaca_connector()
+        account = connector.get_account()
+        return JSONResponse(content={
+            "status": "connected",
+            "account": {
+                "account_number": account.get("account_number"),
+                "cash": account.get("cash"),
+                "portfolio_value": account.get("portfolio_value"),
+                "equity": account.get("equity"),
+                "buying_power": account.get("buying_power"),
+                "daytrade_count": account.get("daytrade_count"),
+                "pattern_day_trader": account.get("pattern_day_trader"),
+                "status": account.get("status"),
+                "currency": account.get("currency"),
+            },
+        })
+    except Exception as e:
+        return JSONResponse(
+            content={"status": "error", "error": str(e)},
+            status_code=500,
+        )
+
+
+async def positions_api(request: Request) -> JSONResponse:
+    """Return live Alpaca positions merged with tracker trades."""
+    try:
+        connector = _get_alpaca_connector()
+        positions = connector.get_positions()
+
+        # Format Alpaca positions
+        alpaca_positions = []
+        for pos in positions:
+            alpaca_positions.append({
+                "symbol": pos.get("symbol"),
+                "qty": pos.get("qty"),
+                "avg_entry_price": pos.get("avg_entry_price"),
+                "current_price": pos.get("current_price"),
+                "market_value": pos.get("market_value"),
+                "unrealized_pl": pos.get("unrealized_pl"),
+                "unrealized_plpc": pos.get("unrealized_plpc"),
+                "side": pos.get("side"),
+                "asset_class": pos.get("asset_class"),
+            })
+
+        # Also get open tracker trades for comparison
+        open_trades = tracker.trade_log.get_open_trades()
+
+        return JSONResponse(content={
+            "alpaca_positions": alpaca_positions,
+            "tracker_open_trades": [_serialize_trade(t) for t in open_trades],
+            "count": len(alpaca_positions),
+        })
+    except Exception as e:
+        return JSONResponse(
+            content={"status": "error", "error": str(e)},
+            status_code=500,
+        )
+
+
 # Starlette routes
 routes = [
     Route("/", dashboard),
@@ -202,6 +354,12 @@ routes = [
     Route("/api/equity-curve", equity_curve_api),
     Route("/api/trades", trades_api),
     Route("/api/trades/{trade_id}/close", close_trade_api),
+    Route("/api/account", account_api),
+    Route("/api/positions", positions_api),
+    Route("/api/loop/start", loop_start, methods=["POST"]),
+    Route("/api/loop/stop", loop_stop, methods=["POST"]),
+    Route("/api/loop/status", loop_status),
+    Route("/api/loop/iterate", loop_iterate, methods=["POST"]),
 ]
 
 # Create the ASGI app
