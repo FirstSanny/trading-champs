@@ -1,6 +1,7 @@
 # Web framework
 starlette>=0.27.0
 vercel>=0.1.0
+python-dateutil>=2.8.0
 
 # Trading and data
 pandas>=2.0.0

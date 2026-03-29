@@ -1,4 +1,4 @@
-"""Alpaca Paper Trading API connector for trading and account operations."""
+"""Alpaca Trading API connector for trading and account operations."""
 
 import logging
 import os
@@ -11,52 +11,72 @@ from trading_champs.data.connectors.base import BaseConnector, PriceBar
 
 logger = logging.getLogger(__name__)
 
-# Alpaca paper trading base URL (v2 API)
+# Alpaca API base URLs (v2 API)
 ALPACA_PAPER_API = os.getenv("ALPACA_PAPER_API", "https://paper-api.alpaca.markets/v2")
-ALPACA_API_KEY = os.getenv("ALPACA_PAPER_API_KEY")
-ALPACA_API_SECRET = os.getenv("ALPACA_PAPER_API_SECRET")
-
-HEADERS = {
-    "APCA-API-KEY-ID": ALPACA_API_KEY,
-    "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
-}
+ALPACA_LIVE_API = os.getenv("ALPACA_LIVE_API", "https://api.alpaca.markets/v2")
 
 
-class AlpacaPaperConnector(BaseConnector):
-    """Connector for Alpaca paper trading API v2."""
+def get_alpaca_headers(api_key: str, api_secret: str) -> dict:
+    """Get headers for Alpaca API."""
+    return {
+        "APCA-API-KEY-ID": api_key,
+        "APCA-API-SECRET-KEY": api_secret,
+    }
 
-    def __init__(self, config: Optional[dict] = None):
+
+class AlpacaConnector(BaseConnector):
+    """Connector for Alpaca trading API v2 - supports both live and paper trading."""
+
+    def __init__(self, config: Optional[dict] = None, mode: str = "paper"):
+        """Initialize Alpaca connector.
+
+        Args:
+            config: Optional configuration dict.
+            mode: 'paper' or 'live'. Defaults to 'paper'.
+        """
         super().__init__(config or {})
-        self.base_url = ALPACA_PAPER_API
-        self.api_key = ALPACA_API_KEY
-        self.api_secret = ALPACA_API_SECRET
+        self.mode = mode
+        self.base_url = ALPACA_PAPER_API if mode == "paper" else ALPACA_LIVE_API
+
+        # Get credentials based on mode
+        if mode == "paper":
+            self.api_key = os.getenv("ALPACA_PAPER_API_KEY")
+            self.api_secret = os.getenv("ALPACA_PAPER_API_SECRET")
+        else:
+            self.api_key = os.getenv("ALPACA_LIVE_API_KEY")
+            self.api_secret = os.getenv("ALPACA_LIVE_API_SECRET")
+
+        self._headers = get_alpaca_headers(self.api_key or "", self.api_secret or "")
         self._account: Optional[Any] = None
 
     @property
     def name(self) -> str:
-        return "alpaca-paper"
+        return f"alpaca-{self.mode}"
 
     def connect(self) -> None:
         """Verify API credentials and fetch account info."""
+        if not self.api_key or not self.api_secret:
+            raise ConnectionError(f"Alpaca {self.mode} API credentials not configured")
+
         try:
             response = requests.get(
                 f"{self.base_url}/account",
-                headers=HEADERS,
+                headers=self._headers,
                 timeout=10,
             )
             response.raise_for_status()
             self._account = response.json()
             self._connected = True
-            logger.info(f"Connected to Alpaca Paper Trading: {self._account.get('account_number')}")
+            logger.info(f"Connected to Alpaca {self.mode.title()} Trading: {self._account.get('account_number')}")
         except requests.exceptions.RequestException as e:
-            logger.error(f"Failed to connect to Alpaca: {e}")
+            logger.error(f"Failed to connect to Alpaca {self.mode}: {e}")
             raise ConnectionError(f"Alpaca connection failed: {e}")
 
     def disconnect(self) -> None:
         """Close connection."""
         self._account = None
         self._connected = False
-        logger.info("Disconnected from Alpaca Paper Trading")
+        logger.info(f"Disconnected from Alpaca {self.mode.title()} Trading")
 
     def is_connected(self) -> bool:
         return self._connected and self._account is not None
@@ -69,7 +89,7 @@ class AlpacaPaperConnector(BaseConnector):
         try:
             response = requests.get(
                 f"{self.base_url}/account",
-                headers=HEADERS,
+                headers=self._headers,
                 timeout=10,
             )
             response.raise_for_status()
@@ -86,7 +106,7 @@ class AlpacaPaperConnector(BaseConnector):
         try:
             response = requests.get(
                 f"{self.base_url}/positions",
-                headers=HEADERS,
+                headers=self._headers,
                 timeout=10,
             )
             response.raise_for_status()
@@ -103,7 +123,7 @@ class AlpacaPaperConnector(BaseConnector):
         try:
             response = requests.get(
                 f"{self.base_url}/positions/{symbol}",
-                headers=HEADERS,
+                headers=self._headers,
                 timeout=10,
             )
             if response.status_code == 404:
@@ -154,7 +174,7 @@ class AlpacaPaperConnector(BaseConnector):
             response = requests.post(
                 f"{self.base_url}/orders",
                 json=order_payload,
-                headers=HEADERS,
+                headers=self._headers,
                 timeout=10,
             )
             response.raise_for_status()
@@ -181,7 +201,7 @@ class AlpacaPaperConnector(BaseConnector):
             response = requests.get(
                 f"{self.base_url}/orders",
                 params={"status": status, "limit": limit},  # type: ignore[arg-type]
-                headers=HEADERS,
+                headers=self._headers,
                 timeout=10,
             )
             response.raise_for_status()
@@ -198,7 +218,7 @@ class AlpacaPaperConnector(BaseConnector):
         try:
             response = requests.delete(
                 f"{self.base_url}/orders/{order_id}",
-                headers=HEADERS,
+                headers=self._headers,
                 timeout=10,
             )
             response.raise_for_status()
@@ -231,3 +251,7 @@ class AlpacaPaperConnector(BaseConnector):
     def fetch_order_book(self, symbol: str, limit: int = 20) -> dict:
         """Fetch order book - requires Alpaca Data API."""
         raise NotImplementedError("Use Polygon.io or another data provider for order book data.")
+
+
+# Backwards compatibility alias
+AlpacaPaperConnector = AlpacaConnector

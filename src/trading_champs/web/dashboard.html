@@ -48,6 +48,12 @@
 
         <div id="error" class="error hidden"></div>
 
+        <div style="margin-bottom: 20px; display: flex; gap: 12px; align-items: center;">
+            <span style="color: #71767b; font-size: 14px;">Trading Mode:</span>
+            <button id="mode-paper" onclick="setMode('paper')" style="padding: 8px 16px; border-radius: 6px; border: 1px solid #2f3336; background: #1c1f23; color: #1d9bf0; cursor: pointer; font-weight: 600;">Paper</button>
+            <button id="mode-live" onclick="setMode('live')" style="padding: 8px 16px; border-radius: 6px; border: 1px solid #2f3336; background: #1c1f23; color: #71767b; cursor: pointer;">Live</button>
+        </div>
+
         <div class="metrics">
             <div class="metric-card">
                 <div class="metric-label">Current Balance</div>
@@ -77,6 +83,16 @@
             <canvas id="dailyChart" height="200"></canvas>
         </div>
 
+        <div class="chart">
+            <div class="chart-title">Strategy P&L</div>
+            <div style="margin-bottom: 12px;">
+                <select id="strategy-select" onchange="loadStrategyCurves()" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #2f3336; background: #1c1f23; color: #e7e9ea; min-width: 150px;">
+                    <option value="all">All Strategies</option>
+                </select>
+            </div>
+            <canvas id="strategyChart" height="200"></canvas>
+        </div>
+
         <div class="trades">
             <div class="chart-title">Recent Trades</div>
             <div id="trades-container">
@@ -92,7 +108,19 @@
         'use strict';
 
         var API_BASE = '/api';
-        var equityChart, dailyChart;
+        var equityChart, dailyChart, strategyChart;
+        var currentMode = 'paper';
+        var allStrategies = {};
+
+        function setMode(mode) {
+            if (mode === currentMode) return;
+            currentMode = mode;
+            document.getElementById('mode-paper').style.background = mode === 'paper' ? '#1c1f23' : '#0f1419';
+            document.getElementById('mode-paper').style.color = mode === 'paper' ? '#1d9bf0' : '#71767b';
+            document.getElementById('mode-live').style.background = mode === 'live' ? '#1c1f23' : '#0f1419';
+            document.getElementById('mode-live').style.color = mode === 'live' ? '#f4212e' : '#71767b';
+            loadDashboard();
+        }
 
         function formatCurrency(v) {
             return '$' + v.toFixed(2).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ',');
@@ -146,6 +174,12 @@
                 data: { labels: [], datasets: [{ data: [], backgroundColor: [] }] },
                 options: commonOpts
             });
+
+            strategyChart = new Chart(document.getElementById('strategyChart'), {
+                type: 'bar',
+                data: { labels: [], datasets: [] },
+                options: commonOpts
+            });
         }
 
         function renderTrades(trades) {
@@ -176,7 +210,9 @@
         }
 
         function loadDashboard() {
-            fetchJSON(API_BASE + '/dashboard')
+            var dashUrl = API_BASE + '/dashboard?mode=' + currentMode;
+            var curveUrl = API_BASE + '/equity-curve?mode=' + currentMode;
+            fetchJSON(dashUrl)
                 .then(function(data) {
                     document.getElementById('balance').textContent = formatCurrency(data.current_balance);
 
@@ -197,7 +233,7 @@
                     document.getElementById('error').classList.add('hidden');
                 })
                 .then(function() {
-                    return fetchJSON(API_BASE + '/equity-curve');
+                    return fetchJSON(curveUrl);
                 })
                 .then(function(curve) {
                     equityChart.data.labels = curve.map(function(d) { return d.date; });
@@ -205,7 +241,7 @@
                     equityChart.update();
                 })
                 .then(function() {
-                    return fetchJSON(API_BASE + '/dashboard');
+                    return fetchJSON(dashUrl);
                 })
                 .then(function(data) {
                     dailyChart.data.labels = data.daily_pnl.map(function(d) { return d.date; });
@@ -215,11 +251,55 @@
                     });
                     dailyChart.update();
                 })
+                .then(function() {
+                    return fetchJSON(API_BASE + '/api/strategy-curves?mode=' + currentMode);
+                })
+                .then(function(curves) {
+                    allStrategies = curves;
+                    var select = document.getElementById('strategy-select');
+                    select.innerHTML = '<option value="all">All Strategies</option>';
+                    Object.keys(curves).forEach(function(strat) {
+                        select.innerHTML += '<option value="' + strat + '">' + strat + '</option>';
+                    });
+                    loadStrategyCurves();
+                })
                 .catch(function(e) {
                     var errEl = document.getElementById('error');
                     errEl.textContent = 'Failed to load dashboard: ' + e.message;
                     errEl.classList.remove('hidden');
                 });
+        }
+
+        function loadStrategyCurves() {
+            var selected = document.getElementById('strategy-select').value;
+            var colors = ['#1d9bf0', '#00ba7c', '#f4212e', '#7856ff', '#ff9900'];
+            var datasets = [];
+
+            if (selected === 'all') {
+                var idx = 0;
+                Object.keys(allStrategies).forEach(function(strat) {
+                    var curve = allStrategies[strat];
+                    datasets.push({
+                        label: strat,
+                        data: curve.map(function(d) { return d.daily_pnl; }),
+                        backgroundColor: colors[idx % colors.length] + '88',
+                    });
+                    idx++;
+                });
+                strategyChart.data.labels = curve ? curve.map(function(d) { return d.date; }) : [];
+            } else {
+                var curve = allStrategies[selected] || [];
+                datasets.push({
+                    data: curve.map(function(d) { return d.daily_pnl; }),
+                    backgroundColor: curve.map(function(d) {
+                        return d.daily_pnl >= 0 ? '#00ba7c' : '#f4212e';
+                    }),
+                });
+                strategyChart.data.labels = curve.map(function(d) { return d.date; });
+            }
+
+            strategyChart.data.datasets = datasets;
+            strategyChart.update();
         }
 
         initCharts();

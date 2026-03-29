@@ -28,6 +28,7 @@ class Trade:
     pnl_percent: float | None
     commission: float = 0.0
     tags: list[str] = field(default_factory=list)
+    strategy: str = "default"
 
     def close(self, exit_price: float, exit_time: datetime, commission: float = 0.0) -> None:
         """Close the trade and calculate P&L."""
@@ -109,6 +110,7 @@ class PnLTracker:
         quantity: float,
         entry_time: datetime | None = None,
         tags: list[str] | None = None,
+        strategy: str = "default",
     ) -> Trade:
         """Open a new trade.
 
@@ -119,6 +121,7 @@ class PnLTracker:
             quantity: Position size.
             entry_time: Entry timestamp.
             tags: Optional tags for the trade.
+            strategy: Strategy name for this trade.
 
         Returns:
             The opened Trade object.
@@ -138,6 +141,7 @@ class PnLTracker:
             pnl=None,
             pnl_percent=None,
             tags=tags or [],
+            strategy=strategy,
         )
         self.trade_log._next_id += 1
         self.trade_log.add_trade(trade)

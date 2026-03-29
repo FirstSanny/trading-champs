@@ -24,6 +24,7 @@ class DashboardData:
     open_positions: list[dict]
     alpaca_connected: bool = False
     alpaca_account: Optional[dict] = None
+    mode: str = "paper"
 
 
 class DashboardProvider:
@@ -44,11 +45,12 @@ class DashboardProvider:
         """Set the Alpaca connector for live account data."""
         self._alpaca_connector = connector
 
-    def get_dashboard_data(self, days: int = 30) -> DashboardData:
+    def get_dashboard_data(self, days: int = 30, mode: str = "paper") -> DashboardData:
         """Get all dashboard data.
 
         Args:
             days: Number of days to include in daily P&L.
+            mode: 'paper' or 'live' trading mode.
 
         Returns:
             DashboardData with all dashboard information.
@@ -155,13 +157,16 @@ class DashboardProvider:
             open_positions=open_positions,
             alpaca_connected=alpaca_connected,
             alpaca_account=alpaca_account,
+            mode=mode,
         )
 
-    def get_equity_curve(self, days: int = 30) -> list[dict]:
+    def get_equity_curve(self, days: int = 30, mode: str = "paper", strategy: str | None = None) -> list[dict]:
         """Get equity curve data for charting.
 
         Args:
             days: Number of days to include.
+            mode: 'paper' or 'live' trading mode.
+            strategy: Optional strategy name to filter by.
 
         Returns:
             List of dicts with date and equity value.
@@ -172,7 +177,7 @@ class DashboardProvider:
 
         for i in range(days):
             date = today - timedelta(days=days - i - 1)
-            daily = self.tracker.get_daily_pnl(date)
+            daily = self._get_daily_pnl_for_strategy(date, strategy)
             running_equity += daily.total_pnl
             curve.append(
                 {
@@ -183,3 +188,67 @@ class DashboardProvider:
             )
 
         return curve
+
+    def _get_daily_pnl_for_strategy(self, date: datetime, strategy: str | None) -> DailyPnL:
+        """Get daily P&L for a specific strategy or all trades."""
+        start = date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        if strategy:
+            day_trades = [
+                t for t in self.tracker.trade_log.trades
+                if t.strategy == strategy and start <= t.entry_time <= end
+            ]
+        else:
+            day_trades = [
+                t for t in self.tracker.trade_log.trades
+                if start <= t.entry_time <= end
+            ]
+
+        closed = [t for t in day_trades if t.exit_time and start <= t.exit_time <= end]
+        realized = sum(t.pnl for t in closed if t.pnl is not None)
+        unrealized = sum(
+            (
+                (t.exit_price or t.entry_price) - t.entry_price
+                if t.side == TradeSide.LONG
+                else t.entry_price - (t.exit_price or t.entry_price)
+            )
+            for t in day_trades
+            if t.exit_price is None
+        )
+        wins = sum(1 for t in closed if t.pnl and t.pnl > 0)
+        losses = sum(1 for t in closed if t.pnl and t.pnl <= 0)
+
+        return DailyPnL(
+            date=date,
+            realized_pnl=realized,
+            unrealized_pnl=unrealized,
+            total_pnl=realized + unrealized,
+            trade_count=len(day_trades),
+            win_count=wins,
+            loss_count=losses,
+        )
+
+    def get_strategies(self) -> list[str]:
+        """Get all unique strategy names from trades."""
+        strategies = set()
+        for trade in self.tracker.trade_log.trades:
+            if trade.strategy:
+                strategies.add(trade.strategy)
+        return sorted(list(strategies)) if strategies else ["default"]
+
+    def get_strategy_equity_curves(self, days: int = 30, mode: str = "paper") -> dict[str, list[dict]]:
+        """Get equity curves for all strategies.
+
+        Args:
+            days: Number of days to include.
+            mode: 'paper' or 'live' trading mode.
+
+        Returns:
+            Dict mapping strategy name to equity curve data.
+        """
+        strategies = self.get_strategies()
+        result = {}
+        for strat in strategies:
+            result[strat] = self.get_equity_curve(days, mode, strat)
+        return result
