@@ -92,9 +92,9 @@ class SocialTrader:
         base_price = market_data.get("price", 100.0) if market_data else 100.0
         price_change = base_price * (self.config["avg_trade_pct"] / 100)
         if side == TradeSide.LONG:
-            entry_price = base_price * 1.02  # Slight rise
+            entry_price = base_price + price_change
         else:
-            entry_price = base_price * 0.98  # Slight drop
+            entry_price = base_price - price_change
 
         return {
             "trader": self.config["name"],

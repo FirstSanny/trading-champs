@@ -3,7 +3,7 @@
 import math
 from typing import Sequence
 
-from trading_champs.signals.indicators.moving_averages import EMA, SMA
+from trading_champs.signals.indicators.moving_averages import SMA
 
 
 def BollingerBands(

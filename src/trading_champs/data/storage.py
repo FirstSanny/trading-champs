@@ -1,16 +1,20 @@
 """Storage layer for market data using Redis and SQLite."""
 
+from __future__ import annotations
+
 import json
 import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 
 import redis
 
 from trading_champs.data.connectors.base import PriceBar
-from trading_champs.signals.backtester import BacktestResult
+
+if TYPE_CHECKING:
+    from trading_champs.signals.backtester import BacktestResult
 
 logger = logging.getLogger(__name__)
 
@@ -239,8 +243,6 @@ class MarketDataStorage:
         Returns:
             Number of rows inserted/updated.
         """
-        from trading_champs.signals.backtester import BacktestResult
-
         conn = sqlite3.connect(self._db_path)
         cursor = conn.cursor()
 

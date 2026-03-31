@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any, Optional
 
-from trading_champs.core.executor import ExecResult, ExecStatus, TradeExecutor
+from trading_champs.core.executor import TradeExecutor
 from trading_champs.core.loop_state import LoopConfig, LoopState, LoopStateStore
 from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
 from trading_champs.data.connectors.ccxt_connector import CCXTConnector

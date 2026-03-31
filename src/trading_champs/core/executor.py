@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
 from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
 from trading_champs.pl.tracker import Trade, TradeSide
@@ -102,7 +102,8 @@ class TradeExecutor:
             )
 
             logger.info(
-                f"Opened long: {qty} {symbol} @ {filled_price}, trade_id={trade.id}, strategy={strategy}"
+                f"Opened long: {qty} {symbol} @ {filled_price}, "
+                f"trade_id={trade.id}, strategy={strategy}"
             )
             return ExecResult(
                 status=ExecStatus.FILLED,
@@ -211,7 +212,3 @@ class TradeExecutor:
     def has_position(self, symbol: str) -> bool:
         """Check if there is an open position for a symbol."""
         return self.get_position_qty(symbol) != 0
-
-
-if TYPE_CHECKING:
-    from trading_champs.pl.tracker import PnLTracker
