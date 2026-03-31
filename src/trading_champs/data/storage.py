@@ -10,6 +10,7 @@ from typing import List, Optional
 import redis
 
 from trading_champs.data.connectors.base import PriceBar
+from trading_champs.signals.backtester import BacktestResult
 
 logger = logging.getLogger(__name__)
 

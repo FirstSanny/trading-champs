@@ -2,7 +2,7 @@
 
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from trading_champs.core.executor import ExecResult, ExecStatus, TradeExecutor
 from trading_champs.core.loop_state import LoopConfig, LoopState, LoopStateStore
@@ -222,13 +222,13 @@ class TradingLoop:
                 return t.id
         return None
 
-    def iterate(self) -> dict:
+    def iterate(self) -> dict[str, Any]:
         """Run one iteration of the trading loop.
 
         Returns:
             Dict describing what happened this iteration.
         """
-        result = {
+        result: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "iterations": self.state.iterations + 1,
             "actions": [],

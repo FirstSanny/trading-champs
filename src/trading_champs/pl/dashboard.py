@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Optional
 
+from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
 from trading_champs.pl.metrics import MetricsCalculator, PerformanceMetrics
 from trading_champs.pl.tracker import DailyPnL, PnLTracker, Trade, TradeSide
 
@@ -31,7 +32,7 @@ class DashboardProvider:
     """Provides data for the P&L dashboard."""
 
     def __init__(
-        self, tracker: PnLTracker, alpaca_connector: Optional["AlpacaPaperConnector"] = None
+        self, tracker: PnLTracker, alpaca_connector: Optional[AlpacaPaperConnector] = None
     ):
         """Initialize dashboard provider.
 
@@ -43,7 +44,7 @@ class DashboardProvider:
         self.metrics_calculator = MetricsCalculator(tracker)
         self._alpaca_connector = alpaca_connector
 
-    def set_alpaca_connector(self, connector: "AlpacaPaperConnector") -> None:
+    def set_alpaca_connector(self, connector: AlpacaPaperConnector) -> None:
         """Set the Alpaca connector for live account data."""
         self._alpaca_connector = connector
 

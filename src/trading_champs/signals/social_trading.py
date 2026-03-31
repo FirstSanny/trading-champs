@@ -2,9 +2,20 @@
 
 import random
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, TypedDict
 
 from trading_champs.pl.tracker import TradeSide
+
+
+class PersonaConfig(TypedDict):
+    """Configuration for a social trading persona."""
+
+    name: str
+    style: str
+    win_rate: float
+    avg_trade_pct: float
+    symbols: list[str]
+    side_bias: str
 
 
 class SocialTrader:
@@ -15,7 +26,7 @@ class SocialTrader:
     """
 
     # Mock trading personas with their typical trade patterns
-    PERSONAS = {
+    PERSONAS: dict[str, PersonaConfig] = {
         "trumps_son": {
             "name": "Donald Trump Jr.",
             "style": "momentum",
@@ -48,8 +59,8 @@ class SocialTrader:
         Args:
             persona: Key from PERSONAS dict (e.g., 'trumps_son')
         """
-        self.persona = persona
-        self.config = self.PERSONAS.get(persona, self.PERSONAS["trumps_son"])
+        self.persona: str = persona
+        self.config: PersonaConfig = self.PERSONAS.get(persona, self.PERSONAS["trumps_son"])
 
     def get_signal(self, symbol: str, market_data: Optional[dict] = None) -> dict | None:
         """Get a trading signal for a symbol.
