@@ -11,8 +11,8 @@ from trading_champs.data.connectors.ccxt_connector import CCXTConnector
 from trading_champs.pl.tracker import PnLTracker
 from trading_champs.risk.position_sizer import PercentRisk
 from trading_champs.risk.stop_loss import FixedStopLoss
-from trading_champs.signals.engine import SignalConfig, SignalEngine
 from trading_champs.signals.detectors.crossover import SignalType
+from trading_champs.signals.engine import SignalConfig, SignalEngine
 
 logger = logging.getLogger(__name__)
 

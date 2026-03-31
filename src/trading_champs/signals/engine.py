@@ -7,7 +7,7 @@ from trading_champs.signals.backtester import BacktestResult
 from trading_champs.signals.detectors.crossover import CrossoverDetector, SignalType
 from trading_champs.signals.detectors.threshold import ThresholdDetector
 from trading_champs.signals.indicators.momentum import MACD, RSI
-from trading_champs.signals.indicators.moving_averages import SMA, EMA
+from trading_champs.signals.indicators.moving_averages import EMA, SMA
 from trading_champs.signals.indicators.volatility import BollingerBands
 
 
