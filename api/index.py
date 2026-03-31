@@ -127,51 +127,57 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
     secret_env = f"ALPACA_{mode.upper()}_API_SECRET"
     if not os.environ.get(key_env) or not os.environ.get(secret_env):
         return False, f"Alpaca {mode} credentials not configured"
-    if tracker.trade_log.trades:
-        return True, None  # Already has trades, nothing to do
 
     try:
         from trading_champs.data.connectors.alpaca_connector import AlpacaConnector
         connector = AlpacaConnector(mode=mode)
         connector.connect()
 
-        # Fetch closed orders from Alpaca
-        orders = connector.get_orders(status="closed", limit=100)
+        # Sync tracker balance with Alpaca account equity
+        account = connector.get_account()
+        alpaca_equity = float(account.get("equity", 0))
+        if alpaca_equity > 0:
+            tracker.initial_balance = alpaca_equity
+            tracker.current_balance = alpaca_equity
 
-        for order in orders:
-            side = TradeSide.LONG if order.get("side") == "buy" else TradeSide.SHORT
-            filled_qty = float(order.get("filled_qty", 0))
-            if filled_qty <= 0:
-                continue
+        # Fetch closed orders from Alpaca if no trades yet
+        if not tracker.trade_log.trades:
+            orders = connector.get_orders(status="closed", limit=100)
 
-            entry_price = float(order.get("filled_avg_price", 0))
-            if entry_price <= 0:
-                continue
+            for order in orders:
+                side = TradeSide.LONG if order.get("side") == "buy" else TradeSide.SHORT
+                filled_qty = float(order.get("filled_qty", 0))
+                if filled_qty <= 0:
+                    continue
 
-            # Parse timestamps
-            created_at = order.get("created_at", "")
-            if created_at:
-                from dateutil import parser  # type: ignore[import-untyped]
-                entry_time = parser.parse(created_at)
-            else:
-                entry_time = datetime.now()
+                entry_price = float(order.get("filled_avg_price", 0))
+                if entry_price <= 0:
+                    continue
 
-            closed_at = order.get("filled_at", "") or order.get("closed_at", "")
-            exit_price = entry_price
-            exit_time = None
-            if closed_at:
-                from dateutil import parser
-                exit_time = parser.parse(closed_at)
+                # Parse timestamps
+                created_at = order.get("created_at", "")
+                if created_at:
+                    from dateutil import parser  # type: ignore[import-untyped]
+                    entry_time = parser.parse(created_at)
+                else:
+                    entry_time = datetime.now()
 
-            trade = tracker.open_trade(
-                symbol=order.get("symbol"),
-                side=side,
-                entry_price=entry_price,
-                quantity=filled_qty,
-                entry_time=entry_time,
-            )
-            if exit_time:
-                tracker.close_trade(trade.id, exit_price, exit_time)
+                closed_at = order.get("filled_at", "") or order.get("closed_at", "")
+                exit_price = entry_price
+                exit_time = None
+                if closed_at:
+                    from dateutil import parser
+                    exit_time = parser.parse(closed_at)
+
+                trade = tracker.open_trade(
+                    symbol=order.get("symbol"),
+                    side=side,
+                    entry_price=entry_price,
+                    quantity=filled_qty,
+                    entry_time=entry_time,
+                )
+                if exit_time:
+                    tracker.close_trade(trade.id, exit_price, exit_time)
 
         provider.set_alpaca_connector(connector)
         return True, None
@@ -225,6 +231,8 @@ def get_loop() -> TradingLoop:
             take_profit_percent=float(os.environ.get("LOOP_TAKE_PROFIT_PCT", "4.0")),
             exchange=os.environ.get("LOOP_EXCHANGE", "binance"),
             timeframe=os.environ.get("LOOP_TIMEFRAME", "1m"),
+            fast_ma_period=int(os.environ.get("LOOP_FAST_MA", "20")),
+            slow_ma_period=int(os.environ.get("LOOP_SLOW_MA", "50")),
         )
         _loop_instance = TradingLoop(
             config=config,

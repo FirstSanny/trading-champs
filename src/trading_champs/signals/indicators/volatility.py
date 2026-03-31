@@ -3,7 +3,7 @@
 import math
 from typing import Sequence
 
-from trading_champs.signals.indicators.moving_averages import SMA
+from trading_champs.signals.indicators.moving_averages import EMA, SMA
 
 
 def BollingerBands(
@@ -37,3 +37,56 @@ def BollingerBands(
         lower[i] = middle[i] - num_std * std
 
     return {"upper": upper, "middle": middle, "lower": lower}
+
+
+def ATR(
+    highs: Sequence[float],
+    lows: Sequence[float],
+    closes: Sequence[float],
+    period: int = 14,
+) -> list[float | None]:
+    """Calculate Average True Range (ATR) indicator.
+
+    True Range = max(H - L, |H - Close_prev|, |L - Close_prev|)
+
+    Args:
+        highs: Sequence of high prices.
+        lows: Sequence of low prices.
+        closes: Sequence of close prices.
+        period: ATR period (default 14).
+
+    Returns:
+        List of ATR values (None for first 'period' values).
+    """
+    if len(highs) != len(lows) or len(highs) != len(closes):
+        raise ValueError("highs, lows, and closes must have same length")
+
+    n = len(highs)
+    tr = [None] * n  # True Range
+
+    # Calculate True Range for each bar
+    for i in range(1, n):
+        high = highs[i]
+        low = lows[i]
+        prev_close = closes[i - 1]
+
+        hl = high - low
+        hc = abs(high - prev_close)
+        lc = abs(low - prev_close)
+
+        tr[i] = max(hl, hc, lc)
+
+    # Calculate ATR using EMA (Wilder's smoothing)
+    atr = [None] * n
+
+    # First ATR is simple average of first 'period' TR values
+    valid_tr = [v for v in tr[1 : period + 1] if v is not None]
+    if valid_tr:
+        atr[period] = sum(valid_tr) / len(valid_tr)
+
+    # Subsequent ATR values use EMA-style smoothing
+    for i in range(period + 1, n):
+        if atr[i - 1] is not None and tr[i] is not None:
+            atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period
+
+    return atr

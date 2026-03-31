@@ -21,6 +21,8 @@ class LoopConfig:
     exchange: str = "binance"
     timeframe: str = "1m"
     lookback_bars: int = 100
+    fast_ma_period: int = 20
+    slow_ma_period: int = 50
 
 
 @dataclass
@@ -84,7 +86,13 @@ class LoopStateStore:
 
     def __init__(self, db_path: str = "data/trading_loop.db"):
         self.db_path = db_path
-        self._init_db()
+        self._db_initialized = False
+        try:
+            self._init_db()
+            self._db_initialized = True
+        except Exception:
+            # In serverless environments, SQLite may fail - use in-memory fallback
+            self._db_initialized = False
 
     def _init_db(self) -> None:
         """Create the loop state table if it doesn't exist."""
@@ -115,62 +123,75 @@ class LoopStateStore:
 
     def load(self) -> LoopState:
         """Load state from SQLite."""
-        import sqlite3
-
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT running, last_run, last_symbol, last_signal, last_action,
-                   consecutive_buy_signals, consecutive_sell_signals,
-                   last_error, iterations
-            FROM loop_state WHERE id = 1
-        """)
-        row = cursor.fetchone()
-        conn.close()
-
-        if row is None:
+        if not self._db_initialized:
             return LoopState()
 
-        return LoopState(
-            running=bool(row[0]),
-            last_run=datetime.fromisoformat(row[1]) if row[1] else None,
-            last_symbol=row[2],
-            last_signal=row[3],
-            last_action=row[4],
-            consecutive_buy_signals=row[5],
-            consecutive_sell_signals=row[6],
-            last_error=row[7],
-            iterations=row[8],
-        )
+        import sqlite3
+
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT running, last_run, last_symbol, last_signal, last_action,
+                       consecutive_buy_signals, consecutive_sell_signals,
+                       last_error, iterations
+                FROM loop_state WHERE id = 1
+            """)
+            row = cursor.fetchone()
+            conn.close()
+
+            if row is None:
+                return LoopState()
+
+            return LoopState(
+                running=bool(row[0]),
+                last_run=datetime.fromisoformat(row[1]) if row[1] else None,
+                last_symbol=row[2],
+                last_signal=row[3],
+                last_action=row[4],
+                consecutive_buy_signals=row[5],
+                consecutive_sell_signals=row[6],
+                last_error=row[7],
+                iterations=row[8],
+            )
+        except Exception:
+            return LoopState()
 
     def save(self, state: LoopState) -> None:
         """Persist state to SQLite."""
+        if not self._db_initialized:
+            return
+
         import sqlite3
 
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
-            UPDATE loop_state SET
-                running = ?,
-                last_run = ?,
-                last_symbol = ?,
-                last_signal = ?,
-                last_action = ?,
-                consecutive_buy_signals = ?,
-                consecutive_sell_signals = ?,
-                last_error = ?,
-                iterations = ?
-            WHERE id = 1
-        """, (
-            int(state.running),
-            state.last_run.isoformat() if state.last_run else None,
-            state.last_symbol,
-            state.last_signal,
-            state.last_action,
-            state.consecutive_buy_signals,
-            state.consecutive_sell_signals,
-            state.last_error,
-            state.iterations,
-        ))
-        conn.commit()
-        conn.close()
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE loop_state SET
+                    running = ?,
+                    last_run = ?,
+                    last_symbol = ?,
+                    last_signal = ?,
+                    last_action = ?,
+                    consecutive_buy_signals = ?,
+                    consecutive_sell_signals = ?,
+                    last_error = ?,
+                    iterations = ?
+                WHERE id = 1
+            """, (
+                int(state.running),
+                state.last_run.isoformat() if state.last_run else None,
+                state.last_symbol,
+                state.last_signal,
+                state.last_action,
+                state.consecutive_buy_signals,
+                state.consecutive_sell_signals,
+                state.last_error,
+                state.iterations,
+            ))
+            conn.commit()
+            conn.close()
+        except Exception:
+            # Silently fail on serverless - state won't persist but loop will work
+            pass

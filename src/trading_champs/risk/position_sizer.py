@@ -138,3 +138,77 @@ class KellyCriterion(PositionSizer):
             dollar_risk=dollar_risk,
             risk_percent=kelly * 100,
         )
+
+
+class ATRRisk(PositionSizer):
+    """ATR-based position sizing for dynamic risk management.
+
+    Position Size = (Account Size × Risk %) / (ATR × Multiplier)
+
+    This sizing method adapts to market volatility - higher ATR (more volatile)
+    means smaller positions, lower ATR means larger positions.
+    """
+
+    def __init__(
+        self,
+        risk_percent: float = 2.0,
+        atr_multiplier: float = 2.0,
+        atr_period: int = 14,
+    ):
+        """Initialize ATR-based position sizer.
+
+        Args:
+            risk_percent: Percentage of account to risk per trade (default 2.0).
+            atr_multiplier: ATR multiplier for stop loss distance (default 2.0).
+            atr_period: ATR period (default 14).
+        """
+        self.risk_percent = risk_percent
+        self.atr_multiplier = atr_multiplier
+        self.atr_period = atr_period
+
+    def calculate(
+        self,
+        account_balance: float,
+        entry_price: float,
+        stop_loss_price: float | None = None,
+        atr_value: float | None = None,
+    ) -> PositionSize:
+        """Calculate position size using ATR-based sizing.
+
+        Args:
+            account_balance: Current account balance.
+            entry_price: Entry price for the position.
+            stop_loss_price: Optional explicit stop loss price.
+            atr_value: Current ATR value. If provided, used for both sizing
+                       and stop loss calculation.
+
+        Returns:
+            PositionSize with ATR-adjusted units and risk parameters.
+        """
+        dollar_risk = account_balance * (self.risk_percent / 100)
+
+        if atr_value is not None and atr_value > 0:
+            # Use ATR for stop loss distance
+            stop_distance = atr_value * self.atr_multiplier
+            if stop_loss_price is None:
+                stop_loss_price = entry_price - stop_distance
+
+        if stop_loss_price is not None:
+            price_risk = abs(entry_price - stop_loss_price)
+        elif atr_value is not None:
+            price_risk = atr_value * self.atr_multiplier
+        else:
+            # Fallback: no stop loss info available
+            return PositionSize(
+                units=0,
+                dollar_risk=dollar_risk,
+                risk_percent=self.risk_percent,
+            )
+
+        units = dollar_risk / price_risk if price_risk > 0 else 0
+
+        return PositionSize(
+            units=units,
+            dollar_risk=dollar_risk,
+            risk_percent=self.risk_percent,
+        )

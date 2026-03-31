@@ -61,6 +61,7 @@ class TradeExecutor:
         tracker: Any,  # PnLTracker - avoid circular import
         order_type: str = "market",
         limit_price: Optional[float] = None,
+        strategy: str = "default",
     ) -> ExecResult:
         """Open a long position.
 
@@ -70,6 +71,7 @@ class TradeExecutor:
             tracker: PnLTracker instance to log the trade.
             order_type: 'market' or 'limit'.
             limit_price: Required for limit orders.
+            strategy: Strategy name for trade tagging.
 
         Returns:
             ExecResult describing what happened.
@@ -96,9 +98,10 @@ class TradeExecutor:
                 quantity=qty,
                 entry_time=datetime.now(),
                 tags=["auto", "loop"],
+                strategy=strategy,
             )
 
-            logger.info(f"Opened long: {qty} {symbol} @ {filled_price}, trade_id={trade.id}")
+            logger.info(f"Opened long: {qty} {symbol} @ {filled_price}, trade_id={trade.id}, strategy={strategy}")
             return ExecResult(
                 status=ExecStatus.FILLED,
                 order_id=order.get("id"),

@@ -106,8 +106,8 @@ class TradingLoop:
             SignalType: BUY, SELL, or NEUTRAL.
         """
         signal_config = SignalConfig(
-            fast_ma_period=20,
-            slow_ma_period=50,
+            fast_ma_period=self.config.fast_ma_period,
+            slow_ma_period=self.config.slow_ma_period,
             rsi_period=14,
             rsi_oversold=30.0,
             rsi_overbought=70.0,
@@ -122,6 +122,10 @@ class TradingLoop:
             signals = engine.generate_rsi_signals()
         elif strategy == "macd":
             signals = engine.generate_macd_signals()
+        elif strategy == "bollinger":
+            signals = engine.generate_bollinger_signals()
+        elif strategy == "bollinger_rsi":
+            signals = engine.generate_bollinger_signals_with_rsi()
         else:  # ma_crossover
             signals = engine.generate_ma_crossover_signals()
 
@@ -279,6 +283,7 @@ class TradingLoop:
                         symbol=symbol,
                         qty=position_size,
                         tracker=self.tracker,
+                        strategy=self.config.strategy,
                     )
                     result["actions"].append({
                         "type": "enter",

@@ -115,11 +115,15 @@
         function setMode(mode) {
             if (mode === currentMode) return;
             currentMode = mode;
+            setModeUI(mode);
+            loadDashboard();
+        }
+
+        function setModeUI(mode) {
             document.getElementById('mode-paper').style.background = mode === 'paper' ? '#1c1f23' : '#0f1419';
             document.getElementById('mode-paper').style.color = mode === 'paper' ? '#1d9bf0' : '#71767b';
             document.getElementById('mode-live').style.background = mode === 'live' ? '#1c1f23' : '#0f1419';
             document.getElementById('mode-live').style.color = mode === 'live' ? '#f4212e' : '#71767b';
-            loadDashboard();
         }
 
         function formatCurrency(v) {
@@ -214,6 +218,19 @@
             var curveUrl = API_BASE + '/equity-curve?mode=' + currentMode;
             fetchJSON(dashUrl)
                 .then(function(data) {
+                    if (data.error) {
+                        var errEl = document.getElementById('error');
+                        errEl.textContent = '⚠ ' + data.error + ' — Showing ' + data.mode + ' mode data.';
+                        errEl.classList.remove('hidden');
+                        // Revert mode button to actual mode
+                        if (data.mode === 'paper') {
+                            currentMode = 'paper';
+                            setModeUI('paper');
+                        }
+                    } else {
+                        document.getElementById('error').classList.add('hidden');
+                    }
+
                     document.getElementById('balance').textContent = formatCurrency(data.current_balance);
 
                     var totalPnlEl = document.getElementById('total-pnl');
@@ -229,8 +246,6 @@
                     returnEl.className = 'metric-value ' + (data.total_return_percent >= 0 ? 'positive' : 'negative');
 
                     renderTrades(data.recent_trades);
-
-                    document.getElementById('error').classList.add('hidden');
                 })
                 .then(function() {
                     return fetchJSON(curveUrl);
@@ -252,7 +267,7 @@
                     dailyChart.update();
                 })
                 .then(function() {
-                    return fetchJSON(API_BASE + '/api/strategy-curves?mode=' + currentMode);
+                    return fetchJSON(API_BASE + '/strategy-curves?mode=' + currentMode);
                 })
                 .then(function(curves) {
                     allStrategies = curves;
@@ -286,7 +301,9 @@
                     });
                     idx++;
                 });
-                strategyChart.data.labels = curve ? curve.map(function(d) { return d.date; }) : [];
+                strategyChart.data.labels = Object.keys(allStrategies).length > 0
+                    ? allStrategies[Object.keys(allStrategies)[0]].map(function(d) { return d.date; })
+                    : [];
             } else {
                 var curve = allStrategies[selected] || [];
                 datasets.push({

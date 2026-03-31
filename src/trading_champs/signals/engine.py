@@ -270,3 +270,51 @@ class SignalEngine:
             results[preset.name] = result
 
         return results
+
+    def generate_bollinger_signals(self) -> list[SignalType]:
+        """Generate signals based on Bollinger Bands mean reversion.
+
+        Buy when price closes below lower band (oversold).
+        Sell when price closes above upper band (overbought).
+
+        Returns:
+            List of signal types.
+        """
+        from trading_champs.signals.detectors.bollinger import BollingerBandsDetector
+
+        rsi_values = None
+        if self.config.use_dynamic_rsi:
+            rsi_values = RSI(self.prices, self.config.rsi_period)
+
+        detector = BollingerBandsDetector(
+            self.prices,
+            period=self.config.fast_ma_period,  # Use fast_ma_period for BB period
+            num_std=2.0,
+            use_rsi_filter=self.config.use_trend_filter,  # Use trend_filter as RSI filter flag
+            rsi_values=rsi_values,
+            rsi_oversold=self.config.rsi_oversold,
+        )
+        return detector.detect()
+
+    def generate_bollinger_signals_with_rsi(self) -> list[SignalType]:
+        """Generate Bollinger Bands signals with RSI confirmation.
+
+        Buy only when price touches lower band AND RSI is oversold.
+        Sell only when price touches upper band AND RSI is overbought.
+
+        Returns:
+            List of signal types.
+        """
+        from trading_champs.signals.detectors.bollinger import BollingerBandsDetector
+
+        rsi_values = RSI(self.prices, self.config.rsi_period)
+
+        detector = BollingerBandsDetector(
+            self.prices,
+            period=self.config.fast_ma_period,
+            num_std=2.0,
+            use_rsi_filter=True,
+            rsi_values=rsi_values,
+            rsi_oversold=self.config.rsi_oversold,
+        )
+        return detector.detect()
