@@ -182,7 +182,9 @@ class TradingLoop:
             return False
         return True
 
-    def _should_exit(self, signal: SignalType, symbol: str, latest_price: float) -> tuple[bool, str]:
+    def _should_exit(
+        self, signal: SignalType, symbol: str, latest_price: float
+    ) -> tuple[bool, str]:
         """Determine if we should close an existing position.
 
         Args:
@@ -205,9 +207,7 @@ class TradingLoop:
         if open_trades:
             trade = open_trades[0]
             stop_loss = FixedStopLoss(percent=self.config.stop_loss_percent)
-            stop = stop_loss.calculate(
-                trade.entry_price, latest_price, latest_price
-            )
+            stop = stop_loss.calculate(trade.entry_price, latest_price, latest_price)
             if trade.side.value == "long" and latest_price <= stop.price:
                 return True, f"stop_loss_{stop.reason}"
             elif trade.side.value == "short" and latest_price >= stop.price:
@@ -256,13 +256,15 @@ class TradingLoop:
                         tracker=self.tracker,
                         tracker_trade_id=trade_id,
                     )
-                    result["actions"].append({
-                        "type": "exit",
-                        "symbol": symbol,
-                        "reason": exit_reason,
-                        "status": exec_result.status.value,
-                        "price": latest_price,
-                    })
+                    result["actions"].append(
+                        {
+                            "type": "exit",
+                            "symbol": symbol,
+                            "reason": exit_reason,
+                            "status": exec_result.status.value,
+                            "price": latest_price,
+                        }
+                    )
                     self.state.record_iteration(symbol, signal_str, f"exited:{exit_reason}")
                     continue
 
@@ -270,12 +272,14 @@ class TradingLoop:
                 if self._should_enter(signal, symbol):
                     position_size = self._calculate_position_size(latest_price)
                     if position_size <= 0:
-                        result["actions"].append({
-                            "type": "skip",
-                            "symbol": symbol,
-                            "reason": "position_size_zero",
-                            "price": latest_price,
-                        })
+                        result["actions"].append(
+                            {
+                                "type": "skip",
+                                "symbol": symbol,
+                                "reason": "position_size_zero",
+                                "price": latest_price,
+                            }
+                        )
                         self.state.record_iteration(symbol, signal_str, "skipped:zero_size")
                         continue
 
@@ -285,15 +289,19 @@ class TradingLoop:
                         tracker=self.tracker,
                         strategy=self.config.strategy,
                     )
-                    result["actions"].append({
-                        "type": "enter",
-                        "symbol": symbol,
-                        "signal": signal_str,
-                        "qty": position_size,
-                        "price": latest_price,
-                        "status": exec_result.status.value,
-                    })
-                    self.state.record_iteration(symbol, signal_str, f"entered:{exec_result.status.value}")
+                    result["actions"].append(
+                        {
+                            "type": "enter",
+                            "symbol": symbol,
+                            "signal": signal_str,
+                            "qty": position_size,
+                            "price": latest_price,
+                            "status": exec_result.status.value,
+                        }
+                    )
+                    self.state.record_iteration(
+                        symbol, signal_str, f"entered:{exec_result.status.value}"
+                    )
                 else:
                     self.state.record_iteration(symbol, signal_str, "no_action")
 

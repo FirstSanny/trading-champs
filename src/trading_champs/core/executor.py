@@ -101,7 +101,9 @@ class TradeExecutor:
                 strategy=strategy,
             )
 
-            logger.info(f"Opened long: {qty} {symbol} @ {filled_price}, trade_id={trade.id}, strategy={strategy}")
+            logger.info(
+                f"Opened long: {qty} {symbol} @ {filled_price}, trade_id={trade.id}, strategy={strategy}"
+            )
             return ExecResult(
                 status=ExecStatus.FILLED,
                 order_id=order.get("id"),

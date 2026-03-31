@@ -141,9 +141,7 @@ class SignalEngine:
             "bb_lower": bb["lower"],
         }
 
-    def generate_ma_crossover_signals_with_preset(
-        self, preset: MAPeriodPreset
-    ) -> list[SignalType]:
+    def generate_ma_crossover_signals_with_preset(self, preset: MAPeriodPreset) -> list[SignalType]:
         """Generate MA crossover signals using a specific period preset.
 
         Args:
@@ -226,12 +224,8 @@ class SignalEngine:
         lower_percentile = self.config.rsi_percentile_low
         upper_percentile = self.config.rsi_percentile_high
 
-        lower_threshold = float(
-            sorted(valid_rsi)[int(len(valid_rsi) * lower_percentile / 100)]
-        )
-        upper_threshold = float(
-            sorted(valid_rsi)[int(len(valid_rsi) * upper_percentile / 100)]
-        )
+        lower_threshold = float(sorted(valid_rsi)[int(len(valid_rsi) * lower_percentile / 100)])
+        upper_threshold = float(sorted(valid_rsi)[int(len(valid_rsi) * upper_percentile / 100)])
 
         return lower_threshold, upper_threshold
 

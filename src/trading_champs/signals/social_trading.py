@@ -112,17 +112,23 @@ class SocialTrader:
                 side = TradeSide.SHORT if side == TradeSide.LONG else TradeSide.LONG
 
             entry_price = 100.0 * (1 + random.uniform(-0.1, 0.1))
-            pnl_pct = random.uniform(-3, 5) if random.random() > (1 - self.config["win_rate"]) else random.uniform(-3, 0)
+            pnl_pct = (
+                random.uniform(-3, 5)
+                if random.random() > (1 - self.config["win_rate"])
+                else random.uniform(-3, 0)
+            )
 
-            trades.append({
-                "trader": self.config["name"],
-                "persona": self.persona,
-                "symbol": symbol,
-                "side": side.value,
-                "entry_price": entry_price,
-                "pnl_pct": pnl_pct,
-                "timestamp": (now - timedelta(hours=i * 4)).isoformat(),
-            })
+            trades.append(
+                {
+                    "trader": self.config["name"],
+                    "persona": self.persona,
+                    "symbol": symbol,
+                    "side": side.value,
+                    "entry_price": entry_price,
+                    "pnl_pct": pnl_pct,
+                    "timestamp": (now - timedelta(hours=i * 4)).isoformat(),
+                }
+            )
 
         return trades
 

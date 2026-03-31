@@ -30,7 +30,9 @@ class DashboardData:
 class DashboardProvider:
     """Provides data for the P&L dashboard."""
 
-    def __init__(self, tracker: PnLTracker, alpaca_connector: Optional["AlpacaPaperConnector"] = None):
+    def __init__(
+        self, tracker: PnLTracker, alpaca_connector: Optional["AlpacaPaperConnector"] = None
+    ):
         """Initialize dashboard provider.
 
         Args:
@@ -135,7 +137,9 @@ class DashboardProvider:
             # Enhance with live Alpaca data if available
             if trade.symbol in alpaca_positions:
                 ap = alpaca_positions[trade.symbol]
-                pos_data["current_price"] = float(ap.get("current_price", pos_data["current_price"]))
+                pos_data["current_price"] = float(
+                    ap.get("current_price", pos_data["current_price"])
+                )
                 pos_data["market_value"] = float(ap.get("market_value", 0))
                 pos_data["unrealized_pnl"] = float(ap.get("unrealized_pl", pnl))
                 pos_data["alpaca_position"] = True
@@ -160,7 +164,9 @@ class DashboardProvider:
             mode=mode,
         )
 
-    def get_equity_curve(self, days: int = 30, mode: str = "paper", strategy: str | None = None) -> list[dict]:
+    def get_equity_curve(
+        self, days: int = 30, mode: str = "paper", strategy: str | None = None
+    ) -> list[dict]:
         """Get equity curve data for charting.
 
         Args:
@@ -196,14 +202,12 @@ class DashboardProvider:
 
         if strategy:
             day_trades = [
-                t for t in self.tracker.trade_log.trades
+                t
+                for t in self.tracker.trade_log.trades
                 if t.strategy == strategy and start <= t.entry_time <= end
             ]
         else:
-            day_trades = [
-                t for t in self.tracker.trade_log.trades
-                if start <= t.entry_time <= end
-            ]
+            day_trades = [t for t in self.tracker.trade_log.trades if start <= t.entry_time <= end]
 
         closed = [t for t in day_trades if t.exit_time and start <= t.exit_time <= end]
         realized = sum(t.pnl for t in closed if t.pnl is not None)
@@ -237,7 +241,9 @@ class DashboardProvider:
                 strategies.add(trade.strategy)
         return sorted(list(strategies)) if strategies else ["default"]
 
-    def get_strategy_equity_curves(self, days: int = 30, mode: str = "paper") -> dict[str, list[dict]]:
+    def get_strategy_equity_curves(
+        self, days: int = 30, mode: str = "paper"
+    ) -> dict[str, list[dict]]:
         """Get equity curves for all strategies.
 
         Args:

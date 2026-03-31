@@ -167,7 +167,8 @@ class LoopStateStore:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 UPDATE loop_state SET
                     running = ?,
                     last_run = ?,
@@ -179,17 +180,19 @@ class LoopStateStore:
                     last_error = ?,
                     iterations = ?
                 WHERE id = 1
-            """, (
-                int(state.running),
-                state.last_run.isoformat() if state.last_run else None,
-                state.last_symbol,
-                state.last_signal,
-                state.last_action,
-                state.consecutive_buy_signals,
-                state.consecutive_sell_signals,
-                state.last_error,
-                state.iterations,
-            ))
+            """,
+                (
+                    int(state.running),
+                    state.last_run.isoformat() if state.last_run else None,
+                    state.last_symbol,
+                    state.last_signal,
+                    state.last_action,
+                    state.consecutive_buy_signals,
+                    state.consecutive_sell_signals,
+                    state.last_error,
+                    state.iterations,
+                ),
+            )
             conn.commit()
             conn.close()
         except Exception:

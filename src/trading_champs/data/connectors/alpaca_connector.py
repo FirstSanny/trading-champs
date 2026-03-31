@@ -67,7 +67,9 @@ class AlpacaConnector(BaseConnector):
             response.raise_for_status()
             self._account = response.json()
             self._connected = True
-            logger.info(f"Connected to Alpaca {self.mode.title()} Trading: {self._account.get('account_number')}")
+            logger.info(
+                f"Connected to Alpaca {self.mode.title()} Trading: {self._account.get('account_number')}"
+            )
         except requests.exceptions.RequestException as e:
             logger.error(f"Failed to connect to Alpaca {self.mode}: {e}")
             raise ConnectionError(f"Alpaca connection failed: {e}")
