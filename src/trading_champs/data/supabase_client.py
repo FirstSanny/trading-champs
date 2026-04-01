@@ -1,4 +1,4 @@
-"""Supabase client for P&L data persistence."""
+"""Supabase client for P&L data persistence using direct HTTP REST API."""
 
 from __future__ import annotations
 
@@ -7,15 +7,13 @@ import os
 from datetime import datetime
 from typing import Any, Optional
 
-from supabase import Client, create_client
-
 from trading_champs.pl.tracker import Trade, TradeSide
 
 logger = logging.getLogger(__name__)
 
 
 class SupabaseClient:
-    """Supabase client wrapper for P&L data storage."""
+    """Supabase client wrapper for P&L data storage using REST API."""
 
     def __init__(self, config: dict | None = None):
         """Initialize Supabase client.
@@ -28,7 +26,7 @@ class SupabaseClient:
         self.url = config.get("url") or os.environ.get("SUPABASE_URL", "")
         self.anon_key = config.get("anon_key") or os.environ.get("SUPABASE_ANON_KEY", "")
         self.service_key = config.get("service_key") or os.environ.get("SUPABASE_SERVICE_KEY", "")
-        self._client: Optional[Client] = None
+        self._connected = False
 
     def connect(self) -> bool:
         """Connect to Supabase.
@@ -41,26 +39,75 @@ class SupabaseClient:
             return False
 
         try:
-            self._client = create_client(self.url, self.anon_key)
-            logger.info("Connected to Supabase")
-            return True
+            import httpx
+            # Test the connection with a lightweight request
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(
+                    f"{self.url}/rest/v1/",
+                    headers={"apikey": self.anon_key, "Authorization": f"Bearer {self.anon_key}"}
+                )
+                if resp.status_code < 500:
+                    self._connected = True
+                    logger.info("Connected to Supabase")
+                    return True
+                else:
+                    logger.error(f"Supabase connection test failed: {resp.status_code}")
+                    return False
         except Exception as e:
             logger.error(f"Failed to connect to Supabase: {e}")
             return False
 
     def disconnect(self) -> None:
         """Disconnect from Supabase."""
-        self._client = None
+        self._connected = False
 
     def is_connected(self) -> bool:
         """Check if connected to Supabase."""
-        return self._client is not None
+        return self._connected
 
-    def _get_table(self, table_name: str):
-        """Get a table reference."""
-        if not self._client:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        json: dict | None = None,
+        params: dict | None = None,
+    ) -> dict | list | None:
+        """Make a request to Supabase REST API.
+
+        Args:
+            method: HTTP method
+            path: API path (e.g., "/trades")
+            json: JSON body for POST/PATCH/DELETE
+            params: Query parameters
+
+        Returns:
+            Response data or None
+        """
+        import httpx
+
+        if not self._connected:
             raise ConnectionError("Supabase not connected")
-        return self._client.table(table_name)
+
+        url = f"{self.url}/rest/v1{path}"
+        headers = {
+            "apikey": self.anon_key,
+            "Authorization": f"Bearer {self.anon_key}",
+            "Content-Type": "application/json",
+            "Prefer": "return=representation",
+        }
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.request(method, url, json=json, params=params, headers=headers)
+                if resp.status_code >= 400:
+                    logger.error(f"Supabase request failed: {method} {path} -> {resp.status_code} {resp.text[:200]}")
+                    return None
+                if resp.text:
+                    return resp.json()
+                return None
+        except Exception as e:
+            logger.error(f"Supabase request error: {e}")
+            return None
 
     # -------------------------------------------------------------------------
     # Trade persistence
@@ -90,8 +137,8 @@ class SupabaseClient:
                 "strategy": getattr(trade, "strategy", None),
                 "status": "open" if trade.exit_price is None else "closed",
             }
-            self._get_table("trades").upsert(data).execute()
-            return True
+            result = self._request("POST", "/trades", json=data)
+            return result is not None
         except Exception as e:
             logger.error(f"Failed to save trade to Supabase: {e}")
             return False
@@ -107,11 +154,13 @@ class SupabaseClient:
             List of trade dictionaries.
         """
         try:
-            query = self._get_table("trades").select("*").order("entry_time", desc=True).limit(limit)
+            params: dict[str, str] = {"select": "*", "limit": str(limit), "order": "entry_time.desc"}
             if status:
-                query = query.eq("status", status)
-            response = query.execute()
-            return response.data or []
+                params["status"] = f"eq.{status}"
+            result = self._request("GET", "/trades", params=params)
+            if isinstance(result, list):
+                return result
+            return []
         except Exception as e:
             logger.error(f"Failed to get trades from Supabase: {e}")
             return []
@@ -119,25 +168,23 @@ class SupabaseClient:
     def get_trade_by_id(self, trade_id: str) -> Optional[dict]:
         """Get a trade by ID."""
         try:
-            response = self._get_table("trades").select("*").eq("id", trade_id).limit(1).execute()
-            return response.data[0] if response.data else None
+            result = self._request(
+                "GET", "/trades", params={"id": f"eq.{trade_id}", "limit": "1"}
+            )
+            if isinstance(result, list) and len(result) > 0:
+                return result[0]
+            return None
         except Exception as e:
             logger.error(f"Failed to get trade from Supabase: {e}")
             return None
 
     def update_trade(self, trade_id: str, updates: dict) -> bool:
-        """Update a trade in Supabase.
-
-        Args:
-            trade_id: ID of the trade to update.
-            updates: Dictionary of fields to update.
-
-        Returns:
-            True if updated successfully.
-        """
+        """Update a trade in Supabase."""
         try:
-            self._get_table("trades").update(updates).eq("id", trade_id).execute()
-            return True
+            result = self._request(
+                "PATCH", f"/trades", json=updates, params={"id": f"eq.{trade_id}"}
+            )
+            return result is not None
         except Exception as e:
             logger.error(f"Failed to update trade in Supabase: {e}")
             return False
@@ -145,8 +192,8 @@ class SupabaseClient:
     def delete_trade(self, trade_id: str) -> bool:
         """Delete a trade from Supabase."""
         try:
-            self._get_table("trades").delete().eq("id", trade_id).execute()
-            return True
+            result = self._request("DELETE", f"/trades", params={"id": f"eq.{trade_id}"})
+            return result is not None
         except Exception as e:
             logger.error(f"Failed to delete trade from Supabase: {e}")
             return False
@@ -155,20 +202,16 @@ class SupabaseClient:
     # Daily P&L persistence
     # -------------------------------------------------------------------------
 
-    def save_daily_pnl(self, date: str, realized_pnl: float, unrealized_pnl: float, trade_count: int, win_count: int, loss_count: int) -> bool:
-        """Save daily P&L summary.
-
-        Args:
-            date: Date string (YYYY-MM-DD).
-            realized_pnl: Realized P&L for the day.
-            unrealized_pnl: Unrealized P&L for the day.
-            trade_count: Number of trades.
-            win_count: Number of winning trades.
-            loss_count: Number of losing trades.
-
-        Returns:
-            True if saved successfully.
-        """
+    def save_daily_pnl(
+        self,
+        date: str,
+        realized_pnl: float,
+        unrealized_pnl: float,
+        trade_count: int,
+        win_count: int,
+        loss_count: int,
+    ) -> bool:
+        """Save daily P&L summary."""
         try:
             data = {
                 "date": date,
@@ -179,32 +222,25 @@ class SupabaseClient:
                 "win_count": win_count,
                 "loss_count": loss_count,
             }
-            self._get_table("daily_pnl").upsert(data).execute()
-            return True
+            result = self._request("POST", "/daily_pnl", json=data)
+            return result is not None
         except Exception as e:
             logger.error(f"Failed to save daily P&L to Supabase: {e}")
             return False
 
     def get_daily_pnl(self, start_date: str, end_date: str) -> list[dict]:
-        """Get daily P&L for a date range.
-
-        Args:
-            start_date: Start date (YYYY-MM-DD).
-            end_date: End date (YYYY-MM-DD).
-
-        Returns:
-            List of daily P&L dictionaries.
-        """
+        """Get daily P&L for a date range."""
         try:
-            response = (
-                self._get_table("daily_pnl")
-                .select("*")
-                .gte("date", start_date)
-                .lte("date", end_date)
-                .order("date", desc=False)
-                .execute()
-            )
-            return response.data or []
+            params = {
+                "select": "*",
+                "date": f"gte.{start_date}",
+                "date": f"lte.{end_date}",
+                "order": "date.asc",
+            }
+            result = self._request("GET", "/daily_pnl", params=params)
+            if isinstance(result, list):
+                return result
+            return []
         except Exception as e:
             logger.error(f"Failed to get daily P&L from Supabase: {e}")
             return []
@@ -214,16 +250,7 @@ class SupabaseClient:
     # -------------------------------------------------------------------------
 
     def save_account_balance(self, balance: float, equity: float, mode: str = "paper") -> bool:
-        """Save account balance snapshot.
-
-        Args:
-            balance: Current cash balance.
-            equity: Total equity.
-            mode: Trading mode ('paper' or 'live').
-
-        Returns:
-            True if saved successfully.
-        """
+        """Save account balance snapshot."""
         try:
             data = {
                 "balance": balance,
@@ -231,8 +258,8 @@ class SupabaseClient:
                 "mode": mode,
                 "recorded_at": datetime.utcnow().isoformat(),
             }
-            self._get_table("account_balances").insert(data).execute()
-            return True
+            result = self._request("POST", "/account_balances", json=data)
+            return result is not None
         except Exception as e:
             logger.error(f"Failed to save account balance to Supabase: {e}")
             return False
@@ -240,15 +267,16 @@ class SupabaseClient:
     def get_latest_balance(self, mode: str = "paper") -> Optional[dict]:
         """Get the latest balance for a mode."""
         try:
-            response = (
-                self._get_table("account_balances")
-                .select("*")
-                .eq("mode", mode)
-                .order("recorded_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-            return response.data[0] if response.data else None
+            params = {
+                "select": "*",
+                "mode": f"eq.{mode}",
+                "order": "recorded_at.desc",
+                "limit": "1",
+            }
+            result = self._request("GET", "/account_balances", params=params)
+            if isinstance(result, list) and len(result) > 0:
+                return result[0]
+            return None
         except Exception as e:
             logger.error(f"Failed to get latest balance from Supabase: {e}")
             return None
