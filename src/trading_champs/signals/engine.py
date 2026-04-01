@@ -33,8 +33,8 @@ MA_PRESETS: list[MAPeriodPreset] = [
 class SignalConfig:
     """Configuration for signal generation."""
 
-    fast_ma_period: int = 10
-    slow_ma_period: int = 20
+    fast_ma_period: int = 20
+    slow_ma_period: int = 50
     rsi_period: int = 14
     rsi_oversold: float = 30.0
     rsi_overbought: float = 70.0

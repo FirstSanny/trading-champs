@@ -23,6 +23,7 @@ class LoopConfig:
     lookback_bars: int = 100
     fast_ma_period: int = 20
     slow_ma_period: int = 50
+    mode: str = "paper"  # 'paper' or 'live'
 
 
 @dataclass

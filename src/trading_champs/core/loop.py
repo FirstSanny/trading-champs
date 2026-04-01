@@ -65,7 +65,7 @@ class TradingLoop:
     def _ensure_alpaca(self) -> AlpacaPaperConnector:
         """Lazily create and connect Alpaca trading connector."""
         if self._alpaca is None:
-            self._alpaca = AlpacaPaperConnector()
+            self._alpaca = AlpacaPaperConnector(mode=self.config.mode)
             self._alpaca.connect()
             self._executor = TradeExecutor(self._alpaca)
         return self._alpaca

@@ -24,6 +24,7 @@ except ImportError:
 
 # Late imports to ensure path is set
 from trading_champs.pl.dashboard import DashboardProvider, DashboardData
+from trading_champs.data.supabase_client import SupabaseClient, get_supabase_client
 from trading_champs.pl.tracker import PnLTracker, TradeSide, Trade, DailyPnL
 from trading_champs.pl.metrics import PerformanceMetrics
 from trading_champs.core.loop import TradingLoop
@@ -99,6 +100,67 @@ def get_dashboard_html() -> str:
 # Create tracker and provider
 tracker = PnLTracker(initial_balance=10000.0)
 provider = DashboardProvider(tracker)
+
+# Supabase client (lazily initialized)
+_supabase_client: SupabaseClient | None = None
+
+
+def get_supabase() -> SupabaseClient | None:
+    """Get or initialize Supabase client."""
+    global _supabase_client
+    if _supabase_client is None:
+        import os
+        url = os.environ.get("SUPABASE_URL", "")
+        anon_key = os.environ.get("SUPABASE_ANON_KEY", "")
+        if url and anon_key:
+            _supabase_client = SupabaseClient({"url": url, "anon_key": anon_key})
+            if not _supabase_client.connect():
+                _supabase_client = None
+        if _supabase_client:
+            print("Supabase connected")
+        else:
+            print("Supabase not configured, running without backend persistence")
+    return _supabase_client
+
+
+def _load_supabase_trades() -> bool:
+    """Load trades from Supabase into tracker if tracker is empty.
+
+    Returns:
+        True if trades were loaded from Supabase.
+    """
+    supabase = get_supabase()
+    if not supabase:
+        return False
+
+    if tracker.trade_log.trades:
+        return False  # Already have trades
+
+    try:
+        trades = supabase.get_trades(limit=500)
+        if not trades:
+            return False
+
+        for t in trades:
+            side = TradeSide.LONG if t.get("side", "").lower() == "long" else TradeSide.SHORT
+            from dateutil import parser
+            entry_time = parser.parse(t["entry_time"]) if t.get("entry_time") else datetime.now()
+            exit_time = parser.parse(t["exit_time"]) if t.get("exit_time") else None
+
+            trade = tracker.open_trade(
+                symbol=t["symbol"],
+                side=side,
+                entry_price=float(t["entry_price"]),
+                quantity=float(t["quantity"]),
+                entry_time=entry_time,
+            )
+            if t.get("exit_price") and exit_time:
+                tracker.close_trade(trade.id, float(t["exit_price"]), exit_time)
+        print(f"Loaded {len(trades)} trades from Supabase")
+        return True
+    except Exception as e:
+        print(f"Failed to load trades from Supabase: {e}")
+        return False
 
 
 def _check_alpaca_credentials(mode: str) -> tuple[bool, str | None]:
@@ -209,6 +271,9 @@ def _refresh_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
 
 _fetch_alpaca_trades()
 
+# Load from Supabase if tracker is empty (fallback when Alpaca not configured)
+_load_supabase_trades()
+
 # Trading loop singleton (lazily initialized)
 _loop_instance: TradingLoop | None = None
 
@@ -233,6 +298,7 @@ def get_loop() -> TradingLoop:
             timeframe=os.environ.get("LOOP_TIMEFRAME", "1m"),
             fast_ma_period=int(os.environ.get("LOOP_FAST_MA", "20")),
             slow_ma_period=int(os.environ.get("LOOP_SLOW_MA", "50")),
+            mode=os.environ.get("LOOP_MODE", "paper"),
         )
         _loop_instance = TradingLoop(
             config=config,
@@ -341,6 +407,10 @@ async def trades_api(request: Request) -> JSONResponse:
             entry_price=float(trade_data["entry_price"]),
             entry_time=entry_time,
         )
+        # Sync to Supabase if configured
+        supabase = get_supabase()
+        if supabase:
+            supabase.save_trade(trade)
         return JSONResponse(content={"status": "success", "trade_id": trade.id})
     elif request.method == "GET":
         query_params = request.query_params
@@ -376,6 +446,10 @@ async def close_trade_api(request: Request) -> JSONResponse:
         trade = tracker.close_trade(trade_id, exit_price, exit_time)
         if trade is None:
             return JSONResponse(content={"error": "Trade not found"}, status_code=404)
+        # Sync to Supabase if configured
+        supabase = get_supabase()
+        if supabase:
+            supabase.save_trade(trade)
         return JSONResponse(content={"status": "success", "trade_id": trade.id, "pnl": trade.pnl})
     return JSONResponse(content={"error": "Method not allowed"}, status_code=405)
 
