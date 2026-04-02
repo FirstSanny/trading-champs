@@ -327,6 +327,43 @@ def parse_post_body(body: str, content_type: str = "") -> dict[str, str]:
     return result
 
 
+def require_api_auth(request: Request) -> bool:
+    """Check API key from Authorization header.
+
+    Expects: Authorization: Bearer <API_SECRET>
+
+    Returns True if valid, raises JSONResponse 401 if invalid.
+    """
+    import os
+
+    api_secret = os.environ.get("API_SECRET", "")
+    # Skip auth if no secret configured (development mode)
+    if not api_secret:
+        return True
+
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return False
+
+    token = auth_header[7:]  # Strip "Bearer " prefix
+    import hmac
+
+    # Constant-time comparison to prevent timing attacks
+    if not hmac.compare_digest(token, api_secret):
+        return False
+    return True
+
+
+def auth_guard(request: Request) -> JSONResponse | None:
+    """Returns 401 JSONResponse if auth fails, None if auth passes."""
+    if require_api_auth(request):
+        return None
+    return JSONResponse(
+        content={"error": "Unauthorized", "message": "Missing or invalid API_SECRET"},
+        status_code=401,
+    )
+
+
 async def dashboard(request: Request) -> HTMLResponse:
     """Serve the dashboard HTML."""
     return HTMLResponse(content=get_dashboard_html())
@@ -334,6 +371,8 @@ async def dashboard(request: Request) -> HTMLResponse:
 
 async def dashboard_api(request: Request) -> JSONResponse:
     """Return dashboard data as JSON."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
     query_params = request.query_params
     days = int(query_params.get("days", [30])[0])
     mode = query_params.get("mode", ["paper"])[0]
@@ -355,6 +394,8 @@ async def dashboard_api(request: Request) -> JSONResponse:
 
 async def equity_curve_api(request: Request) -> JSONResponse:
     """Return equity curve data as JSON."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
     query_params = request.query_params
     days = int(query_params.get("days", [30])[0])
     mode = query_params.get("mode", ["paper"])[0]
@@ -372,6 +413,8 @@ async def equity_curve_api(request: Request) -> JSONResponse:
 
 async def strategy_curves_api(request: Request) -> JSONResponse:
     """Return equity curve data for all strategies as JSON."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
     query_params = request.query_params
     days = int(query_params.get("days", [30])[0])
     mode = query_params.get("mode", ["paper"])[0]
@@ -388,12 +431,16 @@ async def strategy_curves_api(request: Request) -> JSONResponse:
 
 async def strategies_api(request: Request) -> JSONResponse:
     """Return list of all strategies as JSON."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
     strategies = provider.get_strategies()
     return JSONResponse(content={"strategies": strategies})
 
 
 async def trades_api(request: Request) -> JSONResponse:
     """Handle trades API endpoint."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
     if request.method == "POST":
         body = await request.body()
         body_str = body.decode() if body else ""
@@ -432,6 +479,8 @@ async def trades_api(request: Request) -> JSONResponse:
 
 async def close_trade_api(request: Request) -> JSONResponse:
     """Handle close trade API endpoint."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
     path_parts = request.url.path.split("/")
     trade_id = path_parts[3] if len(path_parts) >= 4 else None
     if not trade_id:
@@ -466,6 +515,8 @@ async def not_found(request: Request) -> JSONResponse:
 
 async def loop_start(request: Request) -> JSONResponse:
     """Start the trading loop."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
     loop = get_loop()
     loop.start()
     return JSONResponse(content={"status": "started", "loop": loop.get_status()})
@@ -473,6 +524,8 @@ async def loop_start(request: Request) -> JSONResponse:
 
 async def loop_stop(request: Request) -> JSONResponse:
     """Stop the trading loop."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
     loop = get_loop()
     loop.stop()
     return JSONResponse(content={"status": "stopped", "loop": loop.get_status()})
@@ -480,6 +533,8 @@ async def loop_stop(request: Request) -> JSONResponse:
 
 async def loop_status(request: Request) -> JSONResponse:
     """Get trading loop status."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
     loop = get_loop()
     return JSONResponse(content=loop.get_status())
 
@@ -490,10 +545,18 @@ async def loop_iterate(request: Request) -> JSONResponse:
     This is the main endpoint called by Vercel Cron or an external scheduler.
     Each call runs one complete fetch → signal → execute cycle.
     """
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
+
+    # Extract idempotency key from header (Vercel Cron or external scheduler should set this)
+    idempotency_key = request.headers.get("x-idempotency-key")
+
     loop = get_loop()
     try:
-        result = loop.iterate()
-        return JSONResponse(content=result)
+        result = loop.iterate(idempotency_key=idempotency_key)
+        # If skipped (another instance was running), return 409
+        status_code = 409 if result.get("status") == "skipped" else 200
+        return JSONResponse(content=result, status_code=status_code)
     except Exception as e:
         return JSONResponse(
             content={"error": str(e), "timestamp": datetime.now().isoformat()},
@@ -511,6 +574,8 @@ def _get_alpaca_connector() -> "AlpacaPaperConnector":  # type: ignore[name-defi
 
 async def account_api(request: Request) -> JSONResponse:
     """Return live Alpaca account data."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
     try:
         connector = _get_alpaca_connector()
         account = connector.get_account()
@@ -537,6 +602,8 @@ async def account_api(request: Request) -> JSONResponse:
 
 async def positions_api(request: Request) -> JSONResponse:
     """Return live Alpaca positions merged with tracker trades."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
     try:
         connector = _get_alpaca_connector()
         positions = connector.get_positions()

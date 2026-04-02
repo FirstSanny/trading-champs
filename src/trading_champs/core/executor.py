@@ -90,6 +90,21 @@ class TradeExecutor:
             if order.get("status") == "filled":
                 filled_price = float(order.get("filled_avg_price", 0))
 
+            # Reject if order not filled — do not record a trade with no entry price
+            if filled_price is None or filled_price <= 0:
+                logger.warning(
+                    f"Order not filled for {symbol}: status={order.get('status')}, "
+                    f"filled_avg_price={order.get('filled_avg_price')}"
+                )
+                return ExecResult(
+                    status=ExecStatus.REJECTED,
+                    order_id=order.get("id"),
+                    symbol=symbol,
+                    side="buy",
+                    qty=qty,
+                    message=f"Order not filled — status={order.get('status')}",
+                )
+
             # Log trade in tracker
             trade = tracker.open_trade(
                 symbol=symbol,
@@ -172,6 +187,21 @@ class TradeExecutor:
             filled_price = None
             if order.get("status") == "filled":
                 filled_price = float(order.get("filled_avg_price", 0))
+
+            # Reject if order not filled — do not close tracker trade without exit price
+            if filled_price is None or filled_price <= 0:
+                logger.warning(
+                    f"Close order not filled for {symbol}: status={order.get('status')}, "
+                    f"filled_avg_price={order.get('filled_avg_price')}"
+                )
+                return ExecResult(
+                    status=ExecStatus.REJECTED,
+                    order_id=order.get("id"),
+                    symbol=symbol,
+                    side="sell",
+                    qty=qty,
+                    message=f"Close order not filled — status={order.get('status')}",
+                )
 
             # Close trade in tracker
             if tracker is not None and tracker_trade_id is not None:

@@ -222,12 +222,41 @@ class TradingLoop:
                 return t.id
         return None
 
-    def iterate(self) -> dict[str, Any]:
+    def iterate(self, idempotency_key: str | None = None) -> dict[str, Any]:
         """Run one iteration of the trading loop.
+
+        Args:
+            idempotency_key: Optional idempotency key to prevent duplicate
+                             executions. If provided, concurrent calls with the
+                             same key will return 409.
 
         Returns:
             Dict describing what happened this iteration.
         """
+        import os
+
+        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+        lock_ttl = int(os.environ.get("ITERATE_LOCK_TTL_SECONDS", "60"))
+
+        from trading_champs.core.loop_state import RedisDistributedLock
+
+        lock = RedisDistributedLock(redis_url=redis_url, lock_ttl_seconds=lock_ttl)
+
+        if not lock.acquire(idempotency_key):
+            return {
+                "status": "skipped",
+                "reason": "another_instance_running",
+                "idempotency_key": idempotency_key,
+                "timestamp": datetime.now().isoformat(),
+            }
+
+        try:
+            return self._iterate_impl()
+        finally:
+            lock.release(idempotency_key)
+
+    def _iterate_impl(self) -> dict[str, Any]:
+        """Internal iterate implementation (called after lock acquired)."""
         result: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "iterations": self.state.iterations + 1,

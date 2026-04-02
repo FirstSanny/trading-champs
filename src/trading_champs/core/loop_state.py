@@ -1,8 +1,14 @@
 """Trading loop state persistence."""
 
+from __future__ import annotations
+
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from functools import wraps
+from typing import Any, Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -80,6 +86,184 @@ class LoopState:
             "last_error": self.last_error,
             "iterations": self.iterations,
         }
+
+
+class RedisDistributedLock:
+    """Redis-based distributed lock for serverless environments.
+
+    Prevents concurrent iterate() calls across multiple Vercel instances
+    from opening duplicate positions.
+    """
+
+    LOCK_KEY = "trading_champs:iterate_lock"
+    IDEMPOTENCY_KEY_PREFIX = "trading_champs:idempotency:"
+
+    def __init__(
+        self,
+        redis_url: str = "redis://localhost:6379/0",
+        lock_ttl_seconds: int = 60,
+        idempotency_ttl_seconds: int = 120,
+    ):
+        self.redis_url = redis_url
+        self.lock_ttl_seconds = lock_ttl_seconds
+        self.idempotency_ttl_seconds = idempotency_ttl_seconds
+        self._redis: Any = None
+
+    def _get_redis(self) -> Any:
+        """Lazily connect to Redis."""
+        if self._redis is None:
+            import redis as _redis_module
+
+            try:
+                self._redis = _redis_module.from_url(self.redis_url, decode_responses=True)
+                self._redis.ping()
+                logger.info("Redis distributed lock connected")
+            except Exception as e:
+                logger.warning(f"Redis not available, distributed lock disabled: {e}")
+                self._redis = None
+        return self._redis
+
+    def acquire(self, idempotency_key: str | None = None) -> bool:
+        """Acquire the iterate lock.
+
+        Returns True if lock acquired. If idempotency_key is provided and
+        a result exists for that key, returns False (duplicate request).
+
+        Args:
+            idempotency_key: Optional idempotency key to prevent duplicate
+                             executions within the TTL window.
+
+        Returns:
+            True if this instance should proceed with iterate().
+            False if lock is held by another instance or a matching
+            idempotency key was already processed.
+        """
+        redis = self._get_redis()
+        if redis is None:
+            # Redis unavailable — proceed without lock (old behavior, with warning)
+            logger.warning("Proceeding without distributed lock — Redis unavailable")
+            return True
+
+        import time
+
+        lock_acquired = False
+        try:
+            # Try to set the lock with NX (only if not exists)
+            lock_acquired = redis.set(
+                self.LOCK_KEY,
+                str(time.time()),
+                nx=True,
+                ex=self.lock_ttl_seconds,
+            )
+        except Exception as e:
+            logger.error(f"Failed to acquire Redis lock: {e}")
+            return True  # Fail open — don't block the loop
+
+        if not lock_acquired:
+            logger.warning("Could not acquire iterate lock — another instance is running")
+            return False
+
+        # Check idempotency key
+        if idempotency_key:
+            idempotency_redis_key = f"{self.IDEMPOTENCY_KEY_PREFIX}{idempotency_key}"
+            try:
+                existing = redis.get(idempotency_redis_key)
+                if existing:
+                    logger.info(f"Idempotency key '{idempotency_key}' already processed")
+                    redis.delete(self.LOCK_KEY)  # Release lock since we didn't actually iterate
+                    return False
+                # Store idempotency marker
+                redis.setex(idempotency_redis_key, self.idempotency_ttl_seconds, "processing")
+            except Exception as e:
+                logger.warning(f"Idempotency check failed: {e}")
+
+        return True
+
+    def release(self, idempotency_key: str | None = None) -> None:
+        """Release the iterate lock."""
+        redis = self._get_redis()
+        if redis is None:
+            return
+
+        try:
+            redis.delete(self.LOCK_KEY)
+            if idempotency_key:
+                redis.delete(f"{self.IDEMPOTENCY_KEY_PREFIX}{idempotency_key}")
+        except Exception as e:
+            logger.error(f"Failed to release Redis lock: {e}")
+
+    def mark_done(self, idempotency_key: str, result: str) -> None:
+        """Mark an idempotency key as completed with a result."""
+        redis = self._get_redis()
+        if redis is None:
+            return
+
+        try:
+            key = f"{self.IDEMPOTENCY_KEY_PREFIX}{idempotency_key}"
+            redis.setex(key, self.idempotency_ttl_seconds, result)
+        except Exception as e:
+            logger.error(f"Failed to store idempotency result: {e}")
+
+    def get_cached_result(self, idempotency_key: str) -> str | None:
+        """Get cached result for an idempotency key if it exists."""
+        redis = self._get_redis()
+        if redis is None:
+            return None
+
+        try:
+            return redis.get(f"{self.IDEMPOTENCY_KEY_PREFIX}{idempotency_key}")
+        except Exception:
+            return None
+
+
+def distributed_lock(
+    redis_url: str = "redis://localhost:6379/0",
+    idempotency_param: str | None = "idempotency_key",
+    lock_ttl: int = 60,
+    idempotency_ttl: int = 120,
+) -> Callable:
+    """Decorator that acquires a Redis distributed lock before invoking a function.
+
+    Usage:
+        @distributed_lock(redis_url="redis://...")
+        def iterate(self, idempotency_key: str | None = None) -> dict:
+            ...
+
+    The decorated function receives the idempotency key from request headers
+    and the lock is held for the duration of the function call.
+    """
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
+            # Extract idempotency key from kwargs or first positional arg
+            idempotency_key: str | None = kwargs.get(idempotency_param) if idempotency_param else None
+
+            lock = RedisDistributedLock(
+                redis_url=redis_url,
+                lock_ttl_seconds=lock_ttl,
+                idempotency_ttl_seconds=idempotency_ttl,
+            )
+
+            if not lock.acquire(idempotency_key):
+                # Return a "skipped" response — another instance is handling this
+                from starlette.responses import JSONResponse
+
+                return JSONResponse(
+                    content={
+                        "status": "skipped",
+                        "reason": "another_instance_running",
+                        "idempotency_key": idempotency_key,
+                    },
+                    status_code=409,
+                )
+
+            try:
+                return func(self, *args, **kwargs)
+            finally:
+                lock.release(idempotency_key)
+
+        return wrapper
+    return decorator
 
 
 class LoopStateStore:
