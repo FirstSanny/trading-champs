@@ -95,6 +95,4 @@ deploy:vercel:
   only:
     - main
     - tags
-  tags:
-    - vert.vercel
   when: on_success
