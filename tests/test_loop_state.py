@@ -1,14 +1,9 @@
 """Tests for LoopStateStore and RedisDistributedLock."""
 
-import sqlite3
 import tempfile
-from datetime import datetime
-from unittest.mock import MagicMock, patch, ANY
-
-import pytest
+from unittest.mock import ANY, MagicMock, patch
 
 from trading_champs.core.loop_state import (
-    LoopConfig,
     LoopState,
     LoopStateStore,
     RedisDistributedLock,
@@ -125,6 +120,7 @@ class TestLoopStateStore:
         with caplog.at_level("WARNING"):
             # Force a save failure by corrupting the DB
             import os
+
             os.chmod(db_path, 0o000)
             try:
                 store.save(state)

@@ -119,7 +119,10 @@ class RedisDistributedLock:
                 self._redis.ping()
                 logger.info("Redis distributed lock connected")
             except Exception as e:
-                logger.warning(f"Redis unavailable — distributed lock disabled, proceeding with in-process lock only: {e}")
+                logger.warning(
+                    "Redis unavailable — distributed lock disabled, "
+                    f"proceeding with in-process lock only: {e}"
+                )
                 self._redis = None
         return self._redis
 
@@ -232,11 +235,14 @@ def distributed_lock(
     The decorated function receives the idempotency key from request headers
     and the lock is held for the duration of the function call.
     """
+
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
             # Extract idempotency key from kwargs or first positional arg
-            idempotency_key: str | None = kwargs.get(idempotency_param) if idempotency_param else None
+            idempotency_key: str | None = (
+                kwargs.get(idempotency_param) if idempotency_param else None
+            )
 
             lock = RedisDistributedLock(
                 redis_url=redis_url,
@@ -263,6 +269,7 @@ def distributed_lock(
                 lock.release(idempotency_key)
 
         return wrapper
+
     return decorator
 
 

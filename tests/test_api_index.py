@@ -3,10 +3,6 @@
 import os
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from trading_champs.core.loop_state import RedisDistributedLock
-
 # Set test env before importing the app
 os.environ["API_SECRET"] = "test-secret-key"
 os.environ["SUPABASE_URL"] = ""
@@ -18,7 +14,9 @@ class TestAuthGuard:
 
     def _make_sut(self):
         from starlette.testclient import TestClient
+
         from api.index import app
+
         return TestClient(app)
 
     def test_valid_bearer_token_returns_200(self):
@@ -55,7 +53,9 @@ class TestAuthGuard:
         with patch.dict(os.environ, env, clear=False):
             with patch("api.index._ensure_trader_state"):
                 from starlette.testclient import TestClient
+
                 from api.index import app
+
                 client = TestClient(app)
                 response = client.get("/api/loop/status")
                 # Should not 401 when no secret configured
@@ -67,7 +67,9 @@ class TestIdempotency:
 
     def _make_sut(self):
         from starlette.testclient import TestClient
+
         from api.index import app
+
         return TestClient(app)
 
     def test_first_call_succeeds(self):
@@ -102,7 +104,9 @@ class TestIdempotency:
 
             with patch("api.index._ensure_trader_state"):
                 from starlette.testclient import TestClient
+
                 from api.index import app
+
                 client = TestClient(app)
 
                 resp = client.post(
@@ -115,8 +119,10 @@ class TestIdempotency:
                 assert resp.status_code == 200
                 # Verify the idempotency key was passed to iterate
                 call_kwargs = mock_loop.iterate.call_args
-                assert call_kwargs[1]["idempotency_key"] == "test-key-1" or \
-                       call_kwargs[0][0] == "test-key-1"
+                assert (
+                    call_kwargs[1]["idempotency_key"] == "test-key-1"
+                    or call_kwargs[0][0] == "test-key-1"
+                )
 
 
 class TestMetricsEndpoint:
@@ -124,7 +130,9 @@ class TestMetricsEndpoint:
 
     def _make_sut(self):
         from starlette.testclient import TestClient
+
         from api.index import app
+
         return TestClient(app)
 
     def test_metrics_returns_prometheus_format(self):
@@ -141,7 +149,9 @@ class TestLoopControl:
 
     def _make_sut(self):
         from starlette.testclient import TestClient
+
         from api.index import app
+
         return TestClient(app)
 
     def test_start_sets_running_true(self):
@@ -184,7 +194,9 @@ class TestDashboardAPI:
 
     def _make_sut(self):
         from starlette.testclient import TestClient
+
         from api.index import app
+
         return TestClient(app)
 
     def test_dashboard_api_returns_json(self):
@@ -223,7 +235,9 @@ class TestTradesAPI:
 
     def _make_sut(self):
         from starlette.testclient import TestClient
+
         from api.index import app
+
         return TestClient(app)
 
     def test_get_trades_returns_list(self):

@@ -447,7 +447,7 @@ class TradingLoop:
                 return result
 
             # Calculate delay with jitter
-            delay = min(initial_delay * (multiplier ** attempt), max_delay)
+            delay = min(initial_delay * (multiplier**attempt), max_delay)
             jitter = random.uniform(-0.5, 0.5)
             sleep_time = max(0, delay + jitter)
             logger.info(

@@ -3,7 +3,6 @@
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
-import pytest
 import requests
 
 from trading_champs.core.executor import ExecResult, ExecStatus, TradeExecutor
@@ -56,11 +55,13 @@ class TestTradeExecutorOpenLong:
 
     def test_open_long_filled_order_returns_filled(self):
         """When Alpaca returns filled status, open_long returns FILLED."""
-        connector = self._make_connector({
-            "id": "order-123",
-            "status": "filled",
-            "filled_avg_price": "150.00",
-        })
+        connector = self._make_connector(
+            {
+                "id": "order-123",
+                "status": "filled",
+                "filled_avg_price": "150.00",
+            }
+        )
         executor = TradeExecutor(connector)
         tracker = self._make_tracker()
 
@@ -80,11 +81,13 @@ class TestTradeExecutorOpenLong:
 
     def test_open_long_unfilled_order_returns_rejected(self):
         """When Alpaca returns unfilled order, open_long returns REJECTED."""
-        connector = self._make_connector({
-            "id": "order-456",
-            "status": "pending",
-            "filled_avg_price": None,
-        })
+        connector = self._make_connector(
+            {
+                "id": "order-456",
+                "status": "pending",
+                "filled_avg_price": None,
+            }
+        )
         executor = TradeExecutor(connector)
         tracker = self._make_tracker()
 
@@ -105,11 +108,13 @@ class TestTradeExecutorOpenLong:
 
     def test_open_long_zero_filled_price_returns_rejected(self):
         """When filled_avg_price is 0, open_long returns REJECTED."""
-        connector = self._make_connector({
-            "id": "order-789",
-            "status": "filled",
-            "filled_avg_price": "0",
-        })
+        connector = self._make_connector(
+            {
+                "id": "order-789",
+                "status": "filled",
+                "filled_avg_price": "0",
+            }
+        )
         executor = TradeExecutor(connector)
         tracker = self._make_tracker()
 
