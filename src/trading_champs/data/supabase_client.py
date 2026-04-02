@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
-from trading_champs.pl.tracker import Trade, TradeSide
+from trading_champs.pl.tracker import Trade
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +40,12 @@ class SupabaseClient:
 
         try:
             import httpx
+
             # Test the connection with a lightweight request
             with httpx.Client(timeout=10.0) as client:
                 resp = client.get(
                     f"{self.url}/rest/v1/",
-                    headers={"apikey": self.anon_key, "Authorization": f"Bearer {self.anon_key}"}
+                    headers={"apikey": self.anon_key, "Authorization": f"Bearer {self.anon_key}"},
                 )
                 if resp.status_code < 500:
                     self._connected = True
@@ -100,10 +101,16 @@ class SupabaseClient:
             with httpx.Client(timeout=15.0) as client:
                 resp = client.request(method, url, json=json, params=params, headers=headers)
                 if resp.status_code >= 400:
-                    logger.error(f"Supabase request failed: {method} {path} -> {resp.status_code} {resp.text[:200]}")
+                    logger.error(
+                        "Supabase request failed: %s %s -> %s %s",
+                        method,
+                        path,
+                        resp.status_code,
+                        resp.text[:200],
+                    )
                     return None
                 if resp.text:
-                    return resp.json()
+                    return cast("dict[Any, Any] | list[Any]", resp.json())
                 return None
         except Exception as e:
             logger.error(f"Supabase request error: {e}")
@@ -126,12 +133,20 @@ class SupabaseClient:
             data = {
                 "id": trade.id,
                 "symbol": trade.symbol,
-                "side": trade.side.value if hasattr(trade.side, "value") else str(trade.side),
+                "side": (trade.side.value if hasattr(trade.side, "value") else str(trade.side)),
                 "quantity": trade.quantity,
                 "entry_price": trade.entry_price,
                 "exit_price": trade.exit_price,
-                "entry_time": trade.entry_time.isoformat() if isinstance(trade.entry_time, datetime) else trade.entry_time,
-                "exit_time": trade.exit_time.isoformat() if isinstance(trade.exit_time, datetime) else trade.exit_time,
+                "entry_time": (
+                    trade.entry_time.isoformat()
+                    if isinstance(trade.entry_time, datetime)
+                    else trade.entry_time
+                ),
+                "exit_time": (
+                    trade.exit_time.isoformat()
+                    if isinstance(trade.exit_time, datetime)
+                    else trade.exit_time
+                ),
                 "pnl": trade.pnl,
                 "pnl_percent": trade.pnl_percent,
                 "strategy": getattr(trade, "strategy", None),
@@ -154,7 +169,11 @@ class SupabaseClient:
             List of trade dictionaries.
         """
         try:
-            params: dict[str, str] = {"select": "*", "limit": str(limit), "order": "entry_time.desc"}
+            params: dict[str, str] = {
+                "select": "*",
+                "limit": str(limit),
+                "order": "entry_time.desc",
+            }
             if status:
                 params["status"] = f"eq.{status}"
             result = self._request("GET", "/trades", params=params)
@@ -168,11 +187,9 @@ class SupabaseClient:
     def get_trade_by_id(self, trade_id: str) -> Optional[dict]:
         """Get a trade by ID."""
         try:
-            result = self._request(
-                "GET", "/trades", params={"id": f"eq.{trade_id}", "limit": "1"}
-            )
+            result = self._request("GET", "/trades", params={"id": f"eq.{trade_id}", "limit": "1"})
             if isinstance(result, list) and len(result) > 0:
-                return result[0]
+                return cast("dict[Any, Any]", result[0])
             return None
         except Exception as e:
             logger.error(f"Failed to get trade from Supabase: {e}")
@@ -182,20 +199,20 @@ class SupabaseClient:
         """Update a trade in Supabase."""
         try:
             result = self._request(
-                "PATCH", f"/trades", json=updates, params={"id": f"eq.{trade_id}"}
+                "PATCH", "/trades", json=updates, params={"id": f"eq.{trade_id}"}
             )
             return result is not None
         except Exception as e:
-            logger.error(f"Failed to update trade in Supabase: {e}")
+            logger.error("Failed to update trade in Supabase: %s", e)
             return False
 
     def delete_trade(self, trade_id: str) -> bool:
         """Delete a trade from Supabase."""
         try:
-            result = self._request("DELETE", f"/trades", params={"id": f"eq.{trade_id}"})
+            result = self._request("DELETE", "/trades", params={"id": f"eq.{trade_id}"})
             return result is not None
         except Exception as e:
-            logger.error(f"Failed to delete trade from Supabase: {e}")
+            logger.error("Failed to delete trade from Supabase: %s", e)
             return False
 
     # -------------------------------------------------------------------------
@@ -233,11 +250,14 @@ class SupabaseClient:
         try:
             params = {
                 "select": "*",
-                "date": f"gte.{start_date}",
-                "date": f"lte.{end_date}",
+                "and": f"(date.gte.{start_date},date.lte.{end_date})",
                 "order": "date.asc",
             }
-            result = self._request("GET", "/daily_pnl", params=params)
+            result = self._request(
+                "GET",
+                "/daily_pnl",
+                params=params,
+            )
             if isinstance(result, list):
                 return result
             return []
@@ -275,7 +295,7 @@ class SupabaseClient:
             }
             result = self._request("GET", "/account_balances", params=params)
             if isinstance(result, list) and len(result) > 0:
-                return result[0]
+                return cast("dict[Any, Any]", result[0])
             return None
         except Exception as e:
             logger.error(f"Failed to get latest balance from Supabase: {e}")
