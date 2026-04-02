@@ -12,13 +12,6 @@ cache:
   paths:
     - .cache/pip
 
-.pytest_template: &pytest_template
-  image: python:3.11
-  before_script:
-    - pip install --upgrade pip
-    - pip install --no-cache-dir -r requirements.txt
-    - pip install --no-cache-dir -e ".[dev]"
-
 test:
   stage: test
   parallel:
@@ -104,4 +97,4 @@ deploy:vercel:
     - tags
   tags:
     - vert.vercel
-  when: manual
+  when: on_success
