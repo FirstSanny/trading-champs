@@ -167,13 +167,18 @@ def _check_alpaca_credentials(mode: str) -> tuple[bool, str | None]:
     """Check if Alpaca credentials are configured for the given mode.
 
     Returns (ok, error_message).
+    For paper mode, credentials are optional - it can run without them.
     """
     import os
     key_env = f"ALPACA_{mode.upper()}_API_KEY"
     secret_env = f"ALPACA_{mode.upper()}_API_SECRET"
     if not os.environ.get(key_env):
+        if mode.lower() == "paper":
+            return True, None  # Paper mode doesn't require credentials
         return False, f"${key_env} environment variable is not set"
     if not os.environ.get(secret_env):
+        if mode.lower() == "paper":
+            return True, None  # Paper mode doesn't require credentials
         return False, f"${secret_env} environment variable is not set"
     return True, None
 
