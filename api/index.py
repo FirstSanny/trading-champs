@@ -388,28 +388,37 @@ def parse_post_body(body: str, content_type: str = "") -> dict[str, str]:
 def require_api_auth(request: Request) -> bool:
     """Check API key from Authorization header.
 
-    Expects: Authorization: Bearer <API_SECRET>
+    Supports two auth modes:
+    - Vercel Cron: Authorization: Bearer <CRON_SECRET> (Vercel auto-sends this)
+    - External callers: Authorization: Bearer <API_SECRET>
 
-    Returns True if valid, raises JSONResponse 401 if invalid.
+    Returns True if valid.
     """
     import os
+    import hmac
 
     api_secret = os.environ.get("API_SECRET", "")
-    # Skip auth if no secret configured (development mode)
-    if not api_secret:
-        return True
+    cron_secret = os.environ.get("CRON_SECRET", "")
 
     auth_header = request.headers.get("authorization", "")
     if not auth_header.startswith("Bearer "):
         return False
 
     token = auth_header[7:]  # Strip "Bearer " prefix
-    import hmac
 
-    # Constant-time comparison to prevent timing attacks
-    if not hmac.compare_digest(token, api_secret):
-        return False
-    return True
+    # Vercel Cron: CRON_SECRET is set and token matches
+    if cron_secret and hmac.compare_digest(token, cron_secret):
+        return True
+
+    # External caller: API_SECRET is set and token matches
+    if api_secret and hmac.compare_digest(token, api_secret):
+        return True
+
+    # Dev mode bypass: neither secret is configured
+    if not api_secret and not cron_secret:
+        return True
+
+    return False
 
 
 def auth_guard(request: Request) -> JSONResponse | None:
