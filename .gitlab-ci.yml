@@ -88,7 +88,7 @@ deploy:vercel:
   before_script:
     - npm install -g vercel
   script:
-    - vercel --prod --token=$VERCEL_TOKEN
+    - vercel --prod --yes --token=$VERCEL_TOKEN
   environment:
     name: production
     url: $CI_ENVIRONMENT_URL
