@@ -4,8 +4,8 @@ import json
 import os
 import sys
 from dataclasses import asdict
-from pathlib import Path
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, cast
 
 # Add src to path for imports
@@ -19,25 +19,29 @@ else:
 # Try to import vercel.asgi for Vercel deployment
 try:
     from vercel.asgi import VercelASGI
+
     _HAS_VERCEL_ASGI = True
 except ImportError:
     _HAS_VERCEL_ASGI = False
 
-# Late imports to ensure path is set
-from trading_champs.pl.dashboard import DashboardProvider, DashboardData
-from trading_champs.data.supabase_client import SupabaseClient, get_supabase_client
-from trading_champs.pl.tracker import PnLTracker, TradeSide, Trade, DailyPnL
-from trading_champs.pl.metrics import PerformanceMetrics
-from trading_champs.core.loop import TradingLoop
-from trading_champs.core.loop_state import LoopConfig, LoopStateStore
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
+from trading_champs.core.loop import TradingLoop
+from trading_champs.core.loop_state import LoopConfig, LoopStateStore
+from trading_champs.data.supabase_client import SupabaseClient, get_supabase_client
+
+# Late imports to ensure path is set
+from trading_champs.pl.dashboard import DashboardData, DashboardProvider
+from trading_champs.pl.metrics import PerformanceMetrics
+from trading_champs.pl.tracker import DailyPnL, PnLTracker, Trade, TradeSide
+
 
 def serialize_dashboard_data(data: DashboardData) -> dict:
     """Convert DashboardData to JSON-serializable dict."""
+
     def serialize_daily_pnl(d: DailyPnL) -> dict:
         """Serialize DailyPnL with datetime handling."""
         return {
@@ -58,8 +62,12 @@ def serialize_dashboard_data(data: DashboardData) -> dict:
         "total_pnl": data.total_pnl,
         "total_return_percent": data.total_return_percent,
         "daily_pnl": [serialize_daily_pnl(d) for d in data.daily_pnl] if data.daily_pnl else [],
-        "recent_trades": [_serialize_trade(t) for t in data.recent_trades] if data.recent_trades else [],
-        "performance_metrics": asdict(data.performance_metrics) if data.performance_metrics else None,
+        "recent_trades": (
+            [_serialize_trade(t) for t in data.recent_trades] if data.recent_trades else []
+        ),
+        "performance_metrics": (
+            asdict(data.performance_metrics) if data.performance_metrics else None
+        ),
         "open_positions": data.open_positions,
         "alpaca_connected": data.alpaca_connected,
         "alpaca_account": data.alpaca_account,
@@ -73,12 +81,20 @@ def _serialize_trade(trade: Trade) -> dict:
     return {
         "id": trade.id,
         "symbol": trade.symbol,
-        "side": trade.side.value if hasattr(trade.side, 'value') else str(trade.side),
+        "side": trade.side.value if hasattr(trade.side, "value") else str(trade.side),
         "quantity": trade.quantity,
         "entry_price": trade.entry_price,
         "exit_price": trade.exit_price,
-        "entry_time": trade.entry_time.isoformat() if isinstance(trade.entry_time, datetime) else trade.entry_time,
-        "exit_time": trade.exit_time.isoformat() if isinstance(trade.exit_time, datetime) else trade.exit_time,
+        "entry_time": (
+            trade.entry_time.isoformat()
+            if isinstance(trade.entry_time, datetime)
+            else trade.entry_time
+        ),
+        "exit_time": (
+            trade.exit_time.isoformat()
+            if isinstance(trade.exit_time, datetime)
+            else trade.exit_time
+        ),
         "pnl": trade.pnl,
         "pnl_percent": trade.pnl_percent,
         "status": status,
@@ -111,6 +127,7 @@ def get_supabase() -> SupabaseClient | None:
     global _supabase_client
     if _supabase_client is None:
         import os
+
         url = os.environ.get("SUPABASE_URL", "")
         anon_key = os.environ.get("SUPABASE_ANON_KEY", "")
         if url and anon_key:
@@ -145,6 +162,7 @@ def _load_supabase_trades() -> bool:
         for t in trades:
             side = TradeSide.LONG if t.get("side", "").lower() == "long" else TradeSide.SHORT
             from dateutil import parser
+
             entry_time = parser.parse(t["entry_time"]) if t.get("entry_time") else datetime.now()
             exit_time = parser.parse(t["exit_time"]) if t.get("exit_time") else None
 
@@ -164,6 +182,20 @@ def _load_supabase_trades() -> bool:
         return False
 
 
+def _normalize_alpaca_mode(mode: str) -> str:
+    """Normalize mode string to 'paper' or 'live'.
+
+    Handles short forms like 'p'/'P' and 'l'/'L'.
+    """
+    normalized = mode.lower().strip()
+    if normalized in ("p", "paper"):
+        return "paper"
+    if normalized in ("l", "live"):
+        return "live"
+    # Default to paper for any unrecognized value
+    return "paper"
+
+
 def _check_alpaca_credentials(mode: str) -> tuple[bool, str | None]:
     """Check if Alpaca credentials are configured for the given mode.
 
@@ -171,6 +203,8 @@ def _check_alpaca_credentials(mode: str) -> tuple[bool, str | None]:
     For paper mode, credentials are optional - it can run without them.
     """
     import os
+
+    mode = _normalize_alpaca_mode(mode)
     key_env = f"ALPACA_{mode.upper()}_API_KEY"
     secret_env = f"ALPACA_{mode.upper()}_API_SECRET"
     if not os.environ.get(key_env):
@@ -190,6 +224,8 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
     Returns (success, error_message).
     """
     import os
+
+    mode = _normalize_alpaca_mode(mode)
     # Only fetch from Alpaca if credentials are available
     key_env = f"ALPACA_{mode.upper()}_API_KEY"
     secret_env = f"ALPACA_{mode.upper()}_API_SECRET"
@@ -198,6 +234,7 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
 
     try:
         from trading_champs.data.connectors.alpaca_connector import AlpacaConnector
+
         connector = AlpacaConnector(mode=mode)
         connector.connect()
 
@@ -226,6 +263,7 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
                 created_at = order.get("created_at", "")
                 if created_at:
                     from dateutil import parser  # type: ignore[import-untyped]
+
                     entry_time = parser.parse(created_at)
                 else:
                     entry_time = datetime.now()
@@ -235,6 +273,7 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
                 exit_time = None
                 if closed_at:
                     from dateutil import parser
+
                     exit_time = parser.parse(closed_at)
 
                 trade = tracker.open_trade(
@@ -590,6 +629,7 @@ async def loop_iterate(request: Request) -> JSONResponse:
 def _get_alpaca_connector() -> "AlpacaPaperConnector":  # type: ignore[name-defined]
     """Get or create an Alpaca connector for dashboard queries."""
     from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
+
     connector = AlpacaPaperConnector()
     connector.connect()
     return connector
@@ -602,20 +642,22 @@ async def account_api(request: Request) -> JSONResponse:
     try:
         connector = _get_alpaca_connector()
         account = connector.get_account()
-        return JSONResponse(content={
-            "status": "connected",
-            "account": {
-                "account_number": account.get("account_number"),
-                "cash": account.get("cash"),
-                "portfolio_value": account.get("portfolio_value"),
-                "equity": account.get("equity"),
-                "buying_power": account.get("buying_power"),
-                "daytrade_count": account.get("daytrade_count"),
-                "pattern_day_trader": account.get("pattern_day_trader"),
-                "status": account.get("status"),
-                "currency": account.get("currency"),
-            },
-        })
+        return JSONResponse(
+            content={
+                "status": "connected",
+                "account": {
+                    "account_number": account.get("account_number"),
+                    "cash": account.get("cash"),
+                    "portfolio_value": account.get("portfolio_value"),
+                    "equity": account.get("equity"),
+                    "buying_power": account.get("buying_power"),
+                    "daytrade_count": account.get("daytrade_count"),
+                    "pattern_day_trader": account.get("pattern_day_trader"),
+                    "status": account.get("status"),
+                    "currency": account.get("currency"),
+                },
+            }
+        )
     except Exception as e:
         return JSONResponse(
             content={"status": "error", "error": str(e)},
@@ -634,26 +676,30 @@ async def positions_api(request: Request) -> JSONResponse:
         # Format Alpaca positions
         alpaca_positions = []
         for pos in positions:
-            alpaca_positions.append({
-                "symbol": pos.get("symbol"),
-                "qty": pos.get("qty"),
-                "avg_entry_price": pos.get("avg_entry_price"),
-                "current_price": pos.get("current_price"),
-                "market_value": pos.get("market_value"),
-                "unrealized_pl": pos.get("unrealized_pl"),
-                "unrealized_plpc": pos.get("unrealized_plpc"),
-                "side": pos.get("side"),
-                "asset_class": pos.get("asset_class"),
-            })
+            alpaca_positions.append(
+                {
+                    "symbol": pos.get("symbol"),
+                    "qty": pos.get("qty"),
+                    "avg_entry_price": pos.get("avg_entry_price"),
+                    "current_price": pos.get("current_price"),
+                    "market_value": pos.get("market_value"),
+                    "unrealized_pl": pos.get("unrealized_pl"),
+                    "unrealized_plpc": pos.get("unrealized_plpc"),
+                    "side": pos.get("side"),
+                    "asset_class": pos.get("asset_class"),
+                }
+            )
 
         # Also get open tracker trades for comparison
         open_trades = tracker.trade_log.get_open_trades()
 
-        return JSONResponse(content={
-            "alpaca_positions": alpaca_positions,
-            "tracker_open_trades": [_serialize_trade(t) for t in open_trades],
-            "count": len(alpaca_positions),
-        })
+        return JSONResponse(
+            content={
+                "alpaca_positions": alpaca_positions,
+                "tracker_open_trades": [_serialize_trade(t) for t in open_trades],
+                "count": len(alpaca_positions),
+            }
+        )
     except Exception as e:
         return JSONResponse(
             content={"status": "error", "error": str(e)},
@@ -663,7 +709,8 @@ async def positions_api(request: Request) -> JSONResponse:
 
 async def metrics(request: Request) -> PlainTextResponse:
     """Expose Prometheus metrics."""
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
     return PlainTextResponse(
         generate_latest(),
         media_type=CONTENT_TYPE_LATEST,
