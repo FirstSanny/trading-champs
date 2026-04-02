@@ -400,6 +400,10 @@ def require_api_auth(request: Request) -> bool:
     api_secret = os.environ.get("API_SECRET", "")
     cron_secret = os.environ.get("CRON_SECRET", "")
 
+    # Dev mode bypass: neither secret is configured
+    if not api_secret and not cron_secret:
+        return True
+
     auth_header = request.headers.get("authorization", "")
     if not auth_header.startswith("Bearer "):
         return False
@@ -412,10 +416,6 @@ def require_api_auth(request: Request) -> bool:
 
     # External caller: API_SECRET is set and token matches
     if api_secret and hmac.compare_digest(token, api_secret):
-        return True
-
-    # Dev mode bypass: neither secret is configured
-    if not api_secret and not cron_secret:
         return True
 
     return False
