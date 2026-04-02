@@ -6,6 +6,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
 
+import requests
+
+from trading_champs.core import metrics as _metrics
 from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
 from trading_champs.pl.tracker import Trade, TradeSide
 
@@ -19,6 +22,7 @@ class ExecStatus(Enum):
     REJECTED = "rejected"
     ERROR = "error"
     NO_ACTION = "no_action"
+    RETRYABLE = "retryable"
 
 
 @dataclass
@@ -96,6 +100,7 @@ class TradeExecutor:
                     f"Order not filled for {symbol}: status={order.get('status')}, "
                     f"filled_avg_price={order.get('filled_avg_price')}"
                 )
+                _metrics.order_submission_total.labels(status="rejected", side="buy").inc()
                 return ExecResult(
                     status=ExecStatus.REJECTED,
                     order_id=order.get("id"),
@@ -116,6 +121,8 @@ class TradeExecutor:
                 strategy=strategy,
             )
 
+            _metrics.order_submission_total.labels(status="filled", side="buy").inc()
+            _metrics.open_positions.inc()
             logger.info(
                 f"Opened long: {qty} {symbol} @ {filled_price}, "
                 f"trade_id={trade.id}, strategy={strategy}"
@@ -131,8 +138,24 @@ class TradeExecutor:
                 trade=trade,
             )
 
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 429:
+                logger.warning(f"Rate limited opening long {symbol}: {e}")
+                _metrics.order_submission_total.labels(status="retryable", side="buy").inc()
+                return ExecResult(
+                    status=ExecStatus.RETRYABLE,
+                    symbol=symbol,
+                    side="buy",
+                    qty=qty,
+                    message=f"Rate limited: {e}",
+                )
+            logger.error(f"Failed to open long {symbol}: {e}")
+            _metrics.order_submission_total.labels(status="error", side="buy").inc()
+            return ExecResult(status=ExecStatus.ERROR, symbol=symbol, message=str(e))
+
         except Exception as e:
             logger.error(f"Failed to open long {symbol}: {e}")
+            _metrics.order_submission_total.labels(status="error", side="buy").inc()
             return ExecResult(status=ExecStatus.ERROR, symbol=symbol, message=str(e))
 
     def close_long(
@@ -194,6 +217,7 @@ class TradeExecutor:
                     f"Close order not filled for {symbol}: status={order.get('status')}, "
                     f"filled_avg_price={order.get('filled_avg_price')}"
                 )
+                _metrics.order_submission_total.labels(status="rejected", side="sell").inc()
                 return ExecResult(
                     status=ExecStatus.REJECTED,
                     order_id=order.get("id"),
@@ -213,6 +237,8 @@ class TradeExecutor:
             else:
                 trade = None
 
+            _metrics.order_submission_total.labels(status="filled", side="sell").inc()
+            _metrics.open_positions.dec()
             logger.info(f"Closed long: {qty} {symbol} @ {filled_price}")
             return ExecResult(
                 status=ExecStatus.FILLED,
@@ -225,8 +251,24 @@ class TradeExecutor:
                 trade=trade,
             )
 
+        except requests.exceptions.HTTPError as e:
+            if e.response is not None and e.response.status_code == 429:
+                logger.warning(f"Rate limited closing long {symbol}: {e}")
+                _metrics.order_submission_total.labels(status="retryable", side="sell").inc()
+                return ExecResult(
+                    status=ExecStatus.RETRYABLE,
+                    symbol=symbol,
+                    side="sell",
+                    qty=qty,
+                    message=f"Rate limited: {e}",
+                )
+            logger.error(f"Failed to close long {symbol}: {e}")
+            _metrics.order_submission_total.labels(status="error", side="sell").inc()
+            return ExecResult(status=ExecStatus.ERROR, symbol=symbol, message=str(e))
+
         except Exception as e:
             logger.error(f"Failed to close long {symbol}: {e}")
+            _metrics.order_submission_total.labels(status="error", side="sell").inc()
             return ExecResult(status=ExecStatus.ERROR, symbol=symbol, message=str(e))
 
     def get_position_qty(self, symbol: str) -> float:

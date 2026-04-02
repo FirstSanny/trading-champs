@@ -119,7 +119,7 @@ class RedisDistributedLock:
                 self._redis.ping()
                 logger.info("Redis distributed lock connected")
             except Exception as e:
-                logger.warning(f"Redis not available, distributed lock disabled: {e}")
+                logger.warning(f"Redis unavailable — distributed lock disabled, proceeding with in-process lock only: {e}")
                 self._redis = None
         return self._redis
 
@@ -339,8 +339,9 @@ class LoopStateStore:
                 last_error=row[7],
                 iterations=row[8],
             )
-        except Exception:
-            return LoopState()
+        except Exception as e:
+            logger.error(f"Failed to load loop state from DB: {e}")
+            return LoopState(last_error=f"DB load failed: {e}")
 
     def save(self, state: LoopState) -> None:
         """Persist state to SQLite."""
@@ -380,6 +381,5 @@ class LoopStateStore:
             )
             conn.commit()
             conn.close()
-        except Exception:
-            # Silently fail on serverless - state won't persist but loop will work
-            pass
+        except Exception as e:
+            logger.warning(f"Failed to persist loop state: {e}")

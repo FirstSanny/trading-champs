@@ -1,10 +1,14 @@
 """Automated trading loop that orchestrates signals, risk management, and execution."""
 
 import logging
+import random
+import time
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
-from trading_champs.core.executor import TradeExecutor
+from trading_champs.core import metrics as _metrics
+from trading_champs.core.executor import ExecResult, ExecStatus, TradeExecutor
 from trading_champs.core.loop_state import LoopConfig, LoopState, LoopStateStore
 from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
 from trading_champs.data.connectors.ccxt_connector import CCXTConnector
@@ -15,6 +19,19 @@ from trading_champs.signals.detectors.crossover import SignalType
 from trading_champs.signals.engine import SignalConfig, SignalEngine
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _Action:
+    """Action to be executed with retry support."""
+
+    action_type: Literal["open", "close"]
+    symbol: str
+    qty: float
+    tracker_trade_id: Optional[str] = None
+    strategy: str = "default"
+    order_type: str = "market"
+    limit_price: Optional[float] = None
 
 
 class TradingLoop:
@@ -243,6 +260,7 @@ class TradingLoop:
         lock = RedisDistributedLock(redis_url=redis_url, lock_ttl_seconds=lock_ttl)
 
         if not lock.acquire(idempotency_key):
+            _metrics.iterate_cycle_total.labels(status="skipped").inc()
             return {
                 "status": "skipped",
                 "reason": "another_instance_running",
@@ -280,10 +298,13 @@ class TradingLoop:
                 should_exit, exit_reason = self._should_exit(signal, symbol, latest_price)
                 if should_exit:
                     trade_id = self._find_open_trade_for_symbol(symbol)
-                    exec_result = self.executor.close_long(
-                        symbol=symbol,
-                        tracker=self.tracker,
-                        tracker_trade_id=trade_id,
+                    exec_result = self._execute_with_retry(
+                        _Action(
+                            action_type="close",
+                            symbol=symbol,
+                            qty=None,
+                            tracker_trade_id=trade_id,
+                        )
                     )
                     result["actions"].append(
                         {
@@ -312,11 +333,13 @@ class TradingLoop:
                         self.state.record_iteration(symbol, signal_str, "skipped:zero_size")
                         continue
 
-                    exec_result = self.executor.open_long(
-                        symbol=symbol,
-                        qty=position_size,
-                        tracker=self.tracker,
-                        strategy=self.config.strategy,
+                    exec_result = self._execute_with_retry(
+                        _Action(
+                            action_type="open",
+                            symbol=symbol,
+                            qty=position_size,
+                            strategy=self.config.strategy,
+                        )
                     )
                     result["actions"].append(
                         {
@@ -342,6 +365,11 @@ class TradingLoop:
         # Persist state after iteration
         self.state_store.save(self.state)
         result["state"] = self.state.to_dict()
+
+        # Record metrics
+        cycle_status = "error" if result.get("errors") else "success"
+        _metrics.iterate_cycle_total.labels(status=cycle_status).inc()
+
         return result
 
     def start(self) -> None:
@@ -372,3 +400,61 @@ class TradingLoop:
             },
             "state": self.state.to_dict(),
         }
+
+    def _execute_with_retry(self, action: _Action) -> ExecResult:
+        """Execute a trade action with exponential backoff retry on rate limits.
+
+        Args:
+            action: The action to execute (open or close).
+
+        Returns:
+            ExecResult from the final attempt (after all retries exhausted).
+        """
+        max_retries = 3
+        initial_delay = 1.0
+        multiplier = 2.0
+        max_delay = 10.0
+
+        for attempt in range(max_retries + 1):
+            with _metrics.alpaca_api_duration_seconds.time():
+                if action.action_type == "open":
+                    result = self.executor.open_long(
+                        symbol=action.symbol,
+                        qty=action.qty,
+                        tracker=self.tracker,
+                        strategy=action.strategy,
+                        order_type=action.order_type,
+                        limit_price=action.limit_price,
+                    )
+                else:
+                    result = self.executor.close_long(
+                        symbol=action.symbol,
+                        qty=action.qty if action.qty else None,
+                        tracker=self.tracker,
+                        tracker_trade_id=action.tracker_trade_id,
+                        order_type=action.order_type,
+                        limit_price=action.limit_price,
+                    )
+
+            if result.status != ExecStatus.RETRYABLE:
+                return result
+
+            if attempt == max_retries:
+                logger.warning(
+                    f"Max retries ({max_retries}) exhausted for {action.action_type} "
+                    f"{action.symbol}, giving up"
+                )
+                return result
+
+            # Calculate delay with jitter
+            delay = min(initial_delay * (multiplier ** attempt), max_delay)
+            jitter = random.uniform(-0.5, 0.5)
+            sleep_time = max(0, delay + jitter)
+            logger.info(
+                f"Rate limited on attempt {attempt + 1}, retrying {action.action_type} "
+                f"{action.symbol} in {sleep_time:.2f}s"
+            )
+            time.sleep(sleep_time)
+
+        # Should not reach here, but return last result if we do
+        return result

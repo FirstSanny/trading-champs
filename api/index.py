@@ -1,6 +1,7 @@
 """Vercel serverless function for Trading Champs Dashboard using Starlette ASGI."""
 
 import json
+import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
@@ -31,7 +32,7 @@ from trading_champs.core.loop import TradingLoop
 from trading_champs.core.loop_state import LoopConfig, LoopStateStore
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import HTMLResponse, JSONResponse
+from starlette.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from starlette.routing import Route
 
 
@@ -274,10 +275,28 @@ def _refresh_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
     return _fetch_alpaca_trades(mode)
 
 
-_fetch_alpaca_trades()
+_initialized: bool = False
 
-# Load from Supabase if tracker is empty (fallback when Alpaca not configured)
-_load_supabase_trades()
+
+def _ensure_trader_state() -> None:
+    """Lazily initialize trader state on first API request.
+
+    Loads Alpaca trades (if credentials configured) and Supabase trades
+    (if available) on first call. Does not block the request if either fails.
+    """
+    global _initialized
+    if _initialized:
+        return
+    _initialized = True
+
+    # Fetch Alpaca trades if credentials are configured
+    mode = os.environ.get("LOOP_MODE", "paper")
+    _fetch_alpaca_trades(mode)
+
+    # Load from Supabase if tracker is still empty
+    if not tracker.trade_log.trades:
+        _load_supabase_trades()
+
 
 # Trading loop singleton (lazily initialized)
 _loop_instance: TradingLoop | None = None
@@ -373,6 +392,7 @@ async def dashboard_api(request: Request) -> JSONResponse:
     """Return dashboard data as JSON."""
     if (err_resp := auth_guard(request)) is not None:
         return err_resp
+    _ensure_trader_state()
     query_params = request.query_params
     days = int(query_params.get("days", [30])[0])
     mode = query_params.get("mode", ["paper"])[0]
@@ -441,6 +461,7 @@ async def trades_api(request: Request) -> JSONResponse:
     """Handle trades API endpoint."""
     if (err_resp := auth_guard(request)) is not None:
         return err_resp
+    _ensure_trader_state()
     if request.method == "POST":
         body = await request.body()
         body_str = body.decode() if body else ""
@@ -481,6 +502,7 @@ async def close_trade_api(request: Request) -> JSONResponse:
     """Handle close trade API endpoint."""
     if (err_resp := auth_guard(request)) is not None:
         return err_resp
+    _ensure_trader_state()
     path_parts = request.url.path.split("/")
     trade_id = path_parts[3] if len(path_parts) >= 4 else None
     if not trade_id:
@@ -547,6 +569,7 @@ async def loop_iterate(request: Request) -> JSONResponse:
     """
     if (err_resp := auth_guard(request)) is not None:
         return err_resp
+    _ensure_trader_state()
 
     # Extract idempotency key from header (Vercel Cron or external scheduler should set this)
     idempotency_key = request.headers.get("x-idempotency-key")
@@ -638,6 +661,15 @@ async def positions_api(request: Request) -> JSONResponse:
         )
 
 
+async def metrics(request: Request) -> PlainTextResponse:
+    """Expose Prometheus metrics."""
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    return PlainTextResponse(
+        generate_latest(),
+        media_type=CONTENT_TYPE_LATEST,
+    )
+
+
 # Starlette routes
 routes = [
     Route("/", dashboard),
@@ -646,13 +678,14 @@ routes = [
     Route("/api/strategy-curves", strategy_curves_api),
     Route("/api/strategies", strategies_api),
     Route("/api/trades", trades_api),
-    Route("/api/trades/{trade_id}/close", close_trade_api),
+    Route("/api/trades/{trade_id}/close", close_trade_api, methods=["POST"]),
     Route("/api/account", account_api),
     Route("/api/positions", positions_api),
     Route("/api/loop/start", loop_start, methods=["POST"]),
     Route("/api/loop/stop", loop_stop, methods=["POST"]),
     Route("/api/loop/status", loop_status),
     Route("/api/loop/iterate", loop_iterate, methods=["POST"]),
+    Route("/metrics", metrics),
 ]
 
 # Create the ASGI app
