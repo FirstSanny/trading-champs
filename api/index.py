@@ -431,7 +431,7 @@ def require_api_auth(request: Request) -> bool:
 def auth_guard(request: Request) -> JSONResponse | None:
     """Returns 401 JSONResponse if auth fails, None if auth passes."""
     # Dashboard API is public - no auth required for main dashboard data
-    if request.url.path in ("/api/dashboard", "/api/equity-curve", "/api/strategy-curves"):
+    if request.url.path in ("/api/dashboard", "/api/equity-curve", "/api/strategy-curves", "/api/strategies/overview"):
         return None
     if require_api_auth(request):
         return None
