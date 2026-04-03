@@ -69,11 +69,17 @@ class StageEvaluator:
             StageTransition if a promotion or demotion occurred, None otherwise.
         """
         config = get_stage_config(current_stage)
-        days_in_stage = (datetime.utcnow() - stage_entered_at).days
+        days_in_stage = max(0, (datetime.utcnow() - stage_entered_at).days)
 
         # Check if current drawdown exceeds max for immediate demotion
         if metrics.current_drawdown_pct > config.max_drawdown_pct:
             demote_stage = config.demotes_to
+            # If demote_stage == current_stage, already at minimum — no-op
+            if demote_stage == current_stage:
+                logger.info(
+                    f"Strategy {strategy_id} at {current_stage}, cannot demote further"
+                )
+                return None
             logger.warning(
                 f"Strategy {strategy_id} demoted from {current_stage} to {demote_stage}: "
                 f"drawdown {metrics.current_drawdown_pct:.2f}% exceeds max {config.max_drawdown_pct}%"

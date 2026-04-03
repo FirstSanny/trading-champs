@@ -529,18 +529,26 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
             StrategyOrchestrator,
         )
 
-        strategies_raw = os.environ.get("ORCHESTRATOR_STRATEGIES", "rsi,macd,bollinger")
+        strategies_raw = os.environ.get("ORCHESTRATOR_STRATEGIES", "rsi,macd,bollinger,ma_crossover")
         strategy_ids = [s.strip() for s in strategies_raw.split(",") if s.strip()]
 
+        # Per-strategy equity symbols (one per strategy)
+        symbols_raw = os.environ.get("ORCHESTRATOR_SYMBOLS", "AAPL,MSFT,SPY,TSLA")
+        symbols_list = [s.strip() for s in symbols_raw.split(",") if s.strip()]
+
         strategy_configs: list[StrategyLoopConfig] = []
-        for sid in strategy_ids:
+        for i, sid in enumerate(strategy_ids):
+            symbol = symbols_list[i] if i < len(symbols_list) else symbols_list[0]
             strategy_configs.append(
                 StrategyLoopConfig(
                     strategy_id=sid,
                     strategy_name=sid.upper(),
-                    symbols=["BTC/USDT"],
+                    symbols=[symbol],
                     strategy=sid if sid in ("rsi", "macd", "bollinger", "bollinger_rsi", "ma_crossover") else "ma_crossover",
                     mode="dry_run",
+                    data_connector="alpaca_market",
+                    exec_connector="alpaca",
+                    timeframe="4h",
                 )
             )
 
@@ -787,11 +795,11 @@ async def loop_iterate(request: Request) -> JSONResponse:
         )
 
 
-def _get_alpaca_connector() -> "AlpacaPaperConnector":  # type: ignore[name-defined]
+def _get_alpaca_connector() -> "AlpacaPaperAPIConnector":  # type: ignore[name-defined]
     """Get or create an Alpaca connector for dashboard queries."""
-    from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
+    from trading_champs.data.connectors import AlpacaPaperAPIConnector
 
-    connector = AlpacaPaperConnector()
+    connector = AlpacaPaperAPIConnector()
     connector.connect()
     return connector
 

@@ -5,6 +5,8 @@ import logging
 import os
 import sqlite3
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -159,11 +161,76 @@ class StrategyLoop:
     def iterate(self) -> dict[str, Any]:
         """Run one iteration of this strategy's loop."""
         try:
-            result = self.loop.iterate(idempotency_key=f"orchestrator_{self.config.strategy_id}")
+            result = self.loop.iterate(
+                idempotency_key=f"orchestrator_{self.config.strategy_id}",
+                drift_detector=self.drift_detector,
+            )
+
+            # Record dry_run fills for drift detection
+            if self.config.stage == "dry_run":
+                self._record_dry_run_fills(result)
+
             return result
         except Exception as e:
             logger.error(f"Strategy {self.config.strategy_id} iterate error: {e}")
             return {"status": "error", "strategy_id": self.config.strategy_id, "error": str(e)}
+
+    def _record_dry_run_fills(self, result: dict[str, Any]) -> None:
+        """Record dry_run fills from iterate result into DriftStore.
+
+        Called after a successful dry_run iterate to populate DriftStore
+        so DriftDetector can compare against paper fills.
+        """
+        from trading_champs.core.drift_store import DryRunFill
+
+        signals = result.get("signals", [])
+        actions = result.get("actions", [])
+
+        # Build symbol -> bar_timestamp map from signals
+        symbol_ts: dict[str, float] = {}
+        for sig in signals:
+            sym = sig.get("symbol")
+            ts_str = sig.get("bar_timestamp")
+            if sym and ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    symbol_ts[sym] = ts.timestamp()
+                except (ValueError, TypeError):
+                    pass
+
+        for action in actions:
+            sym = action.get("symbol")
+            if sym not in symbol_ts:
+                continue
+
+            bar_ts = int(symbol_ts[sym])
+            action_type = action.get("type")
+            status = action.get("status")
+            filled_price = action.get("price")  # filled_avg_price equivalent
+
+            if status != "filled" or not filled_price:
+                continue
+
+            if action_type == "enter":
+                fill = DryRunFill(
+                    symbol=sym,
+                    bar_timestamp=bar_ts,
+                    entry_price=filled_price,
+                    exit_price=None,
+                    side="long",
+                    fill_time=time.time(),
+                )
+                self.drift_detector.record_dry_run_fill(fill)
+            elif action_type == "exit":
+                fill = DryRunFill(
+                    symbol=sym,
+                    bar_timestamp=bar_ts,
+                    entry_price=None,
+                    exit_price=filled_price,
+                    side="long",
+                    fill_time=time.time(),
+                )
+                self.drift_detector.record_dry_run_fill(fill)
 
     def get_metrics(self, stage_entered_at: datetime) -> StrategyMetrics:
         """Compute metrics from the tracker for stage evaluation."""
@@ -394,30 +461,40 @@ class StrategyOrchestrator:
             "strategies": {},
         }
 
-        for strategy_id, strategy_loop in self._strategy_loops.items():
-            # Update capital_fraction from stage_config before each iterate
-            capital_fraction = strategy_loop.config.stage_config.capital_fraction
-
+        # Run all strategy iterations in parallel via ThreadPoolExecutor
+        def run_strategy(strategy_id: str, strategy_loop: StrategyLoop) -> tuple[str, dict[str, Any]]:
             try:
                 # Update position_size_fraction from current stage_config before iterate
                 current_fraction = strategy_loop.config.stage_config.capital_fraction
                 strategy_loop.loop.config.position_size_fraction = current_fraction
 
                 result = strategy_loop.iterate()
-                results["strategies"][strategy_id] = result
-
-                # Update stage in config from state (in case it changed)
-                strategy_state = self._state_store.load(strategy_id)
-                strategy_loop.config.stage = strategy_state.stage
-                strategy_loop.config.stage_config = get_stage_config(strategy_state.stage)
-
+                return strategy_id, result
             except Exception as e:
                 logger.error(f"Strategy {strategy_id} error in iterate_all: {e}")
-                results["strategies"][strategy_id] = {
+                return strategy_id, {
                     "status": "error",
                     "strategy_id": strategy_id,
                     "error": str(e),
                 }
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(run_strategy, sid, slo): sid
+                for sid, slo in self._strategy_loops.items()
+            }
+            for future in futures:
+                strategy_id, result = future.result()
+                results["strategies"][strategy_id] = result
+
+        # Update stages from state store (sequential — DB writes)
+        for strategy_id, strategy_loop in self._strategy_loops.items():
+            try:
+                strategy_state = self._state_store.load(strategy_id)
+                strategy_loop.config.stage = strategy_state.stage
+                strategy_loop.config.stage_config = get_stage_config(strategy_state.stage)
+            except Exception as e:
+                logger.error(f"Strategy {strategy_id} stage update error: {e}")
 
         # After all strategies iterate, evaluate stage transitions
         self._evaluate_all()

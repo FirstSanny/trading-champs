@@ -11,6 +11,7 @@ from trading_champs.core import metrics as _metrics
 from trading_champs.core.executor import ExecResult, ExecStatus, TradeExecutor
 from trading_champs.core.loop_state import LoopConfig, LoopState, LoopStateStore
 from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector, create_connector
+from trading_champs.data.connectors.alpaca_market_data_connector import AlpacaMarketDataConnector
 from trading_champs.data.connectors.dry_run_connector import DryRunConnector
 from trading_champs.data.connectors.ccxt_connector import CCXTConnector
 from trading_champs.pl.tracker import PnLTracker
@@ -63,6 +64,7 @@ class TradingLoop:
 
         # Initialize connectors lazily
         self._ccxt: Optional[CCXTConnector] = None
+        self._alpaca_market: Optional[AlpacaMarketDataConnector] = None
         self._alpaca: Optional["AlpacaConnector | DryRunConnector"] = None
         self._executor: Optional[TradeExecutor] = None
 
@@ -73,8 +75,13 @@ class TradingLoop:
             self._state = self.state_store.load()
         return self._state
 
-    def _ensure_data_connector(self) -> CCXTConnector:
-        """Lazily create and connect CCXT data connector."""
+    def _ensure_data_connector(self) -> "CCXTConnector | AlpacaMarketDataConnector":
+        """Lazily create and connect the data connector based on config.data_connector."""
+        if self.config.data_connector == "alpaca_market":
+            if self._alpaca_market is None:
+                self._alpaca_market = AlpacaMarketDataConnector()
+                self._alpaca_market.connect()
+            return self._alpaca_market
         if self._ccxt is None:
             self._ccxt = CCXTConnector({"exchange": self.config.exchange})
             self._ccxt.connect()
@@ -96,14 +103,14 @@ class TradingLoop:
         assert self._executor is not None
         return self._executor
 
-    def _fetch_prices(self, symbol: str) -> tuple[list[float], float]:
+    def _fetch_prices(self, symbol: str) -> tuple[list[float], float, datetime]:
         """Fetch recent close prices for a symbol.
 
         Returns:
-            Tuple of (prices list, latest close price).
+            Tuple of (prices list, latest close price, latest bar timestamp).
         """
-        ccxt = self._ensure_data_connector()
-        bars = ccxt.fetch_ohlcv(
+        connector = self._ensure_data_connector()
+        bars = connector.fetch_ohlcv(
             symbol,
             timeframe=self.config.timeframe,
             limit=self.config.lookback_bars,
@@ -113,7 +120,8 @@ class TradingLoop:
 
         closes = [bar.close for bar in bars]
         latest_close = closes[-1]
-        return closes, latest_close
+        latest_bar_timestamp = bars[-1].timestamp
+        return closes, latest_close, latest_bar_timestamp
 
     def _generate_signal(self, prices: list[float]) -> SignalType:
         """Generate trading signal from price data.
@@ -241,13 +249,19 @@ class TradingLoop:
                 return t.id
         return None
 
-    def iterate(self, idempotency_key: str | None = None) -> dict[str, Any]:
+    def iterate(
+        self,
+        idempotency_key: str | None = None,
+        drift_detector: Any = None,
+    ) -> dict[str, Any]:
         """Run one iteration of the trading loop.
 
         Args:
             idempotency_key: Optional idempotency key to prevent duplicate
                              executions. If provided, concurrent calls with the
                              same key will return 409.
+            drift_detector: Optional DriftDetector to record dry_run fills for
+                            drift detection (used in dry_run mode only).
 
         Returns:
             Dict describing what happened this iteration.
@@ -271,11 +285,11 @@ class TradingLoop:
             }
 
         try:
-            return self._iterate_impl()
+            return self._iterate_impl(drift_detector=drift_detector)
         finally:
             lock.release(idempotency_key)
 
-    def _iterate_impl(self) -> dict[str, Any]:
+    def _iterate_impl(self, drift_detector: Any = None) -> dict[str, Any]:
         """Internal iterate implementation (called after lock acquired)."""
         result: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
@@ -288,8 +302,8 @@ class TradingLoop:
         for symbol in self.config.symbols:
             try:
                 # 1. Fetch price data
-                prices, latest_price = self._fetch_prices(symbol)
-                result["signals"].append({"symbol": symbol, "price": latest_price})
+                prices, latest_price, latest_bar_timestamp = self._fetch_prices(symbol)
+                result["signals"].append({"symbol": symbol, "price": latest_price, "bar_timestamp": latest_bar_timestamp.isoformat()})
 
                 # 2. Generate signal
                 signal = self._generate_signal(prices)
