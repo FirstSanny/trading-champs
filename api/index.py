@@ -183,15 +183,17 @@ def _load_supabase_trades() -> bool:
 
 
 def _normalize_alpaca_mode(mode: str) -> str:
-    """Normalize mode string to 'paper' or 'live'.
+    """Normalize mode string to 'paper', 'live', or 'dry_run'.
 
-    Handles short forms like 'p'/'P' and 'l'/'L'.
+    Handles short forms like 'p'/'P', 'l'/'L', and 'd'/'dr'.
     """
     normalized = mode.lower().strip()
     if normalized in ("p", "paper"):
         return "paper"
     if normalized in ("l", "live"):
         return "live"
+    if normalized in ("d", "dr", "dry_run", "dryrun"):
+        return "dry_run"
     # Default to paper for any unrecognized value
     return "paper"
 
@@ -200,11 +202,13 @@ def _check_alpaca_credentials(mode: str) -> tuple[bool, str | None]:
     """Check if Alpaca credentials are configured for the given mode.
 
     Returns (ok, error_message).
-    For paper mode, credentials are optional - it can run without them.
+    For paper and dry_run modes, credentials are optional.
     """
     import os
 
     mode = _normalize_alpaca_mode(mode)
+    if mode == "dry_run":
+        return True, None
     key_env = f"ALPACA_{mode.upper()}_API_KEY"
     secret_env = f"ALPACA_{mode.upper()}_API_SECRET"
     if not os.environ.get(key_env):
@@ -226,6 +230,9 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
     import os
 
     mode = _normalize_alpaca_mode(mode)
+    if mode == "dry_run":
+        return False, None  # Dry-run has no external trades to fetch
+
     # Only fetch from Alpaca if credentials are available
     key_env = f"ALPACA_{mode.upper()}_API_KEY"
     secret_env = f"ALPACA_{mode.upper()}_API_SECRET"
@@ -424,7 +431,7 @@ def require_api_auth(request: Request) -> bool:
 def auth_guard(request: Request) -> JSONResponse | None:
     """Returns 401 JSONResponse if auth fails, None if auth passes."""
     # Dashboard API is public - no auth required for main dashboard data
-    if request.url.path in ("/api/dashboard", "/api/strategies", "/api/equity-curve", "/api/strategy-curves"):
+    if request.url.path in ("/api/dashboard", "/api/equity-curve", "/api/strategy-curves"):
         return None
     if require_api_auth(request):
         return None
@@ -506,6 +513,148 @@ async def strategies_api(request: Request) -> JSONResponse:
         return err_resp
     strategies = provider.get_strategies()
     return JSONResponse(content={"strategies": strategies})
+
+
+# Orchestrator singleton (lazily initialized)
+_orchestrator: "StrategyOrchestrator | None" = None  # type: ignore[name-defined]
+
+
+def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
+    """Get or create the strategy orchestrator singleton."""
+    global _orchestrator
+    if _orchestrator is None:
+        from trading_champs.core.orchestrator import (
+            OrchestratorConfig,
+            StrategyLoopConfig,
+            StrategyOrchestrator,
+        )
+
+        strategies_raw = os.environ.get("ORCHESTRATOR_STRATEGIES", "rsi,macd,bollinger")
+        strategy_ids = [s.strip() for s in strategies_raw.split(",") if s.strip()]
+
+        strategy_configs: list[StrategyLoopConfig] = []
+        for sid in strategy_ids:
+            strategy_configs.append(
+                StrategyLoopConfig(
+                    strategy_id=sid,
+                    strategy_name=sid.upper(),
+                    symbols=["BTC/USDT"],
+                    strategy=sid if sid in ("rsi", "macd", "bollinger", "bollinger_rsi", "ma_crossover") else "ma_crossover",
+                    mode="dry_run",
+                )
+            )
+
+        _orchestrator = StrategyOrchestrator(
+            strategies=strategy_configs,
+            config=OrchestratorConfig(),
+        )
+    return _orchestrator
+
+
+async def strategy_stage_history(request: Request) -> JSONResponse:
+    """Get stage history for a specific strategy."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
+    path_parts = request.url.path.split("/")
+    strategy_id = path_parts[3] if len(path_parts) >= 4 else None
+    if not strategy_id:
+        return JSONResponse(content={"error": "Strategy ID required"}, status_code=400)
+
+    orchestrator = get_orchestrator()
+    history = orchestrator.get_stage_history(strategy_id)
+    return JSONResponse(
+        content={
+            "strategy_id": strategy_id,
+            "history": [asdict(t) for t in history],
+        }
+    )
+
+
+async def strategy_stage_patch(request: Request) -> JSONResponse:
+    """Force set a strategy's stage (manual override)."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
+    path_parts = request.url.path.split("/")
+    strategy_id = path_parts[3] if len(path_parts) >= 4 else None
+    if not strategy_id:
+        return JSONResponse(content={"error": "Strategy ID required"}, status_code=400)
+
+    body = await request.body()
+    body_str = body.decode() if body else ""
+    content_type = request.headers.get("content-type", "")
+    data = parse_post_body(body_str, content_type)
+
+    target_stage = data.get("stage")
+    override_reason = data.get("override_reason", "manual_override")
+
+    if not target_stage:
+        return JSONResponse(content={"error": "stage is required"}, status_code=400)
+    if not override_reason:
+        return JSONResponse(content={"error": "override_reason is required"}, status_code=400)
+
+    orchestrator = get_orchestrator()
+    try:
+        new_state = orchestrator.force_stage(
+            strategy_id=strategy_id,
+            target_stage=target_stage,
+            reason=override_reason,
+        )
+        return JSONResponse(
+            content={
+                "status": "success",
+                "strategy_id": strategy_id,
+                "new_stage": new_state.stage,
+                "stage_entered_at": new_state.stage_entered_at.isoformat(),
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(content={"error": str(e)}, status_code=400)
+
+
+async def strategies_overview(request: Request) -> JSONResponse:
+    """Return per-strategy stage overview for the dashboard."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
+    orchestrator = get_orchestrator()
+    states = orchestrator.get_all_strategy_states()
+    result = []
+    for strategy_id, state in states.items():
+        # Compute metrics from the strategy loop's tracker
+        strategy_loop = orchestrator._strategy_loops.get(strategy_id)
+        metrics_data = {}
+        if strategy_loop:
+            metrics = strategy_loop.get_metrics(state.stage_entered_at)
+            metrics_data = {
+                "total_trades": metrics.total_trades,
+                "win_rate": round(metrics.win_rate * 100, 1) if metrics.win_rate else 0,
+                "current_drawdown_pct": round(metrics.current_drawdown_pct, 2),
+                "total_pnl_pct": round(metrics.total_pnl_pct, 2),
+                "days_in_stage": metrics.days_in_stage,
+            }
+        result.append({
+            "strategy_id": strategy_id,
+            "stage": state.stage,
+            "stage_entered_at": state.stage_entered_at.isoformat(),
+            "metrics": metrics_data,
+        })
+    return JSONResponse(content={"strategies": result})
+
+
+async def strategy_orchestrator_iterate(request: Request) -> JSONResponse:
+    """Run one iteration across all strategies via the orchestrator."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
+    idempotency_key = request.headers.get("x-idempotency-key")
+    orchestrator = get_orchestrator()
+    try:
+        result = orchestrator.iterate_all(idempotency_key=idempotency_key)
+        status_code = 409 if result.get("status") == "skipped" else 200
+        return JSONResponse(content=result, status_code=status_code)
+    except Exception as e:
+        return JSONResponse(
+            content={"error": str(e), "timestamp": datetime.now().isoformat()},
+            status_code=500,
+        )
 
 
 async def trades_api(request: Request) -> JSONResponse:
@@ -736,6 +885,9 @@ routes = [
     Route("/api/equity-curve", equity_curve_api),
     Route("/api/strategy-curves", strategy_curves_api),
     Route("/api/strategies", strategies_api),
+    Route("/api/strategies/overview", strategies_overview),
+    Route("/api/strategies/{strategy_id}/stage_history", strategy_stage_history),
+    Route("/api/strategies/{strategy_id}/stage", strategy_stage_patch, methods=["PATCH"]),
     Route("/api/trades", trades_api),
     Route("/api/trades/{trade_id}/close", close_trade_api, methods=["POST"]),
     Route("/api/account", account_api),
@@ -744,6 +896,7 @@ routes = [
     Route("/api/loop/stop", loop_stop, methods=["POST"]),
     Route("/api/loop/status", loop_status),
     Route("/api/loop/iterate", loop_iterate, methods=["POST"]),
+    Route("/api/orchestrator/iterate", strategy_orchestrator_iterate, methods=["POST"]),
     Route("/metrics", metrics),
 ]
 
