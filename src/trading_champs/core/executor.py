@@ -58,6 +58,10 @@ class TradeExecutor:
     def connector(self) -> AlpacaPaperConnector:
         return self._connector
 
+    def _is_dry_run(self) -> bool:
+        """Check if the connector is in dry_run mode."""
+        return getattr(self._connector, "mode", None) == "dry_run"
+
     def open_long(
         self,
         symbol: str,
@@ -111,13 +115,16 @@ class TradeExecutor:
                 )
 
             # Log trade in tracker
+            tags = ["auto", "loop"]
+            if self._is_dry_run():
+                tags.append("dry_run")
             trade = tracker.open_trade(
                 symbol=symbol,
                 side=TradeSide.LONG,
                 entry_price=filled_price,
                 quantity=qty,
                 entry_time=datetime.now(),
-                tags=["auto", "loop"],
+                tags=tags,
                 strategy=strategy,
             )
 
@@ -234,6 +241,8 @@ class TradeExecutor:
                     exit_price=filled_price or 0,
                     exit_time=datetime.now(),
                 )
+                if self._is_dry_run() and trade:
+                    trade.tags.append("dry_run")
             else:
                 trade = None
 

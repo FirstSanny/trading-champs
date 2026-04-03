@@ -258,3 +258,19 @@ class AlpacaConnector(BaseConnector):
 
 # Backwards compatibility alias
 AlpacaPaperConnector = AlpacaConnector
+
+
+def create_connector(mode: str = "paper") -> "AlpacaConnector | DryRunConnector":
+    """Create the appropriate trading connector for the given mode.
+
+    Args:
+        mode: 'paper', 'live', or 'dry_run'
+
+    Returns:
+        AlpacaConnector for paper/live modes, DryRunConnector for dry_run.
+    """
+    if mode == "dry_run":
+        from trading_champs.data.connectors.dry_run_connector import DryRunConnector
+
+        return DryRunConnector()
+    return AlpacaConnector(mode=mode)

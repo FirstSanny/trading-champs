@@ -10,7 +10,8 @@ from typing import Any, Literal, Optional
 from trading_champs.core import metrics as _metrics
 from trading_champs.core.executor import ExecResult, ExecStatus, TradeExecutor
 from trading_champs.core.loop_state import LoopConfig, LoopState, LoopStateStore
-from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
+from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector, create_connector
+from trading_champs.data.connectors.dry_run_connector import DryRunConnector
 from trading_champs.data.connectors.ccxt_connector import CCXTConnector
 from trading_champs.pl.tracker import PnLTracker
 from trading_champs.risk.position_sizer import PercentRisk
@@ -62,7 +63,7 @@ class TradingLoop:
 
         # Initialize connectors lazily
         self._ccxt: Optional[CCXTConnector] = None
-        self._alpaca: Optional[AlpacaPaperConnector] = None
+        self._alpaca: Optional["AlpacaConnector | DryRunConnector"] = None
         self._executor: Optional[TradeExecutor] = None
 
     @property
@@ -79,11 +80,12 @@ class TradingLoop:
             self._ccxt.connect()
         return self._ccxt
 
-    def _ensure_alpaca(self) -> AlpacaPaperConnector:
-        """Lazily create and connect Alpaca trading connector."""
+    def _ensure_alpaca(self) -> "AlpacaPaperConnector | DryRunConnector":
+        """Lazily create and connect the trading connector based on mode."""
         if self._alpaca is None:
-            self._alpaca = AlpacaPaperConnector(mode=self.config.mode)
-            self._alpaca.connect()
+            self._alpaca = create_connector(self.config.mode)
+            if self.config.mode != "dry_run":
+                self._alpaca.connect()
             self._executor = TradeExecutor(self._alpaca)
         return self._alpaca
 
@@ -304,6 +306,7 @@ class TradingLoop:
                             symbol=symbol,
                             qty=None,
                             tracker_trade_id=trade_id,
+                            limit_price=latest_price,
                         )
                     )
                     result["actions"].append(
@@ -339,6 +342,7 @@ class TradingLoop:
                             symbol=symbol,
                             qty=position_size,
                             strategy=self.config.strategy,
+                            limit_price=latest_price,
                         )
                     )
                     result["actions"].append(

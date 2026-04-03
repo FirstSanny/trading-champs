@@ -122,6 +122,23 @@
         .section-chevron.open { transform: rotate(180deg); }
         .section-warning { color: var(--color-warning); font-size: 12px; margin-left: var(--space-2); }
 
+        /* STRATEGY CARDS */
+        .strategy-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-3); padding: var(--space-3) var(--space-4); }
+        .strategy-card { background: var(--color-bg-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-3); display: flex; flex-direction: column; gap: var(--space-2); }
+        .strategy-card-header { display: flex; align-items: center; justify-content: space-between; }
+        .strategy-card-name { font-size: 13px; font-weight: 600; font-family: var(--font-mono); color: var(--color-text-primary); }
+        .stage-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+        .stage-badge.dry_run { background: rgba(107,122,143,0.2); color: var(--color-text-secondary); border: 1px solid var(--color-text-tertiary); }
+        .stage-badge.paper { background: rgba(29,155,240,0.15); color: #1d9bf0; border: 1px solid rgba(29,155,240,0.4); }
+        .stage-badge.live_stage_1 { background: rgba(0,212,170,0.12); color: var(--color-accent); border: 1px solid rgba(0,212,170,0.4); }
+        .stage-badge.live_stage_2 { background: rgba(0,230,118,0.12); color: var(--color-positive); border: 1px solid rgba(0,230,118,0.4); }
+        .strategy-card-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-1) var(--space-3); }
+        .strategy-metric { display: flex; flex-direction: column; gap: 1px; }
+        .strategy-metric-label { font-size: 9px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-secondary); }
+        .strategy-metric-value { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--color-text-primary); }
+        .strategy-metric-value.positive { color: var(--color-positive); }
+        .strategy-metric-value.negative { color: var(--color-negative); }
+
         /* TABLES */
         .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
         .data-table th { font-size: 10px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-secondary); text-align: left; padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--color-border); }
@@ -245,6 +262,20 @@
         <div class="chip"><span class="chip-label">Worst Day</span><span class="chip-value" id="chip-worst">—</span></div>
         <div class="chip"><span class="chip-label">Trades</span><span class="chip-value" id="chip-trades">—</span></div>
     </div>
+
+    <!-- STRATEGIES OVERVIEW -->
+    <section id="strategies-section">
+        <div class="section-header" role="button" tabindex="0" id="strategies-header" onclick="toggleSection('strategies')">
+            <span class="section-title">Strategies</span>
+            <span class="section-count" id="strategies-count">0</span>
+            <span class="section-chevron open" id="strategies-chevron">▼</span>
+        </div>
+        <div class="collapsible-content open" id="strategies-content">
+            <div class="strategy-cards" id="strategy-cards">
+                <div class="empty-state"><div class="empty-state-icon">&#9881;</div><div class="empty-state-title">No strategies configured</div><div class="empty-state-body">Set ORCHESTRATOR_STRATEGIES to enable multi-strategy staging.</div></div>
+            </div>
+        </div>
+    </section>
 
     <!-- OPEN POSITIONS -->
     <section>
@@ -615,18 +646,73 @@
             strategyChart.update('none');
         }
 
+        /* ---- STRATEGIES OVERVIEW ---- */
+        function renderStrategies(strategies) {
+            var container = document.getElementById('strategy-cards');
+            var countEl = document.getElementById('strategies-count');
+            countEl.textContent = strategies.length;
+
+            if (!strategies || strategies.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            var html = strategies.map(function(s) {
+                var m = s.metrics || {};
+                var stageClass = s.stage || 'dry_run';
+                var stageLabel = (s.stage || 'dry_run').replace('_', ' ');
+                var pnlVal = m.total_pnl_pct || 0;
+                var pnlCls = pnlVal > 0 ? 'positive' : (pnlVal < 0 ? 'negative' : '');
+                var ddVal = m.current_drawdown_pct || 0;
+                var ddCls = ddVal > 5 ? 'negative' : '';
+                var wrVal = m.win_rate || 0;
+                var wrCls = wrVal >= 55 ? 'positive' : (wrVal < 40 ? 'negative' : '');
+                return '<div class="strategy-card">' +
+                    '<div class="strategy-card-header">' +
+                        '<span class="strategy-card-name">' + String(s.strategy_id).toUpperCase() + '</span>' +
+                        '<span class="stage-badge ' + stageClass + '">' + stageLabel + '</span>' +
+                    '</div>' +
+                    '<div class="strategy-card-metrics">' +
+                        '<div class="strategy-metric">' +
+                            '<span class="strategy-metric-label">Win Rate</span>' +
+                            '<span class="strategy-metric-value ' + wrCls + '">' + wrVal + '%</span>' +
+                        '</div>' +
+                        '<div class="strategy-metric">' +
+                            '<span class="strategy-metric-label">Trades</span>' +
+                            '<span class="strategy-metric-value">' + (m.total_trades || 0) + '</span>' +
+                        '</div>' +
+                        '<div class="strategy-metric">' +
+                            '<span class="strategy-metric-label">P&amp;L</span>' +
+                            '<span class="strategy-metric-value ' + pnlCls + '">' + formatPct(pnlVal) + '</span>' +
+                        '</div>' +
+                        '<div class="strategy-metric">' +
+                            '<span class="strategy-metric-label">Drawdown</span>' +
+                            '<span class="strategy-metric-value ' + ddCls + '">' + ddVal.toFixed(1) + '%</span>' +
+                        '</div>' +
+                        '<div class="strategy-metric">' +
+                            '<span class="strategy-metric-label">Days</span>' +
+                            '<span class="strategy-metric-value">' + (m.days_in_stage || 0) + '</span>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>';
+            });
+            container.innerHTML = DOMPurify.sanitize(html.join(''), { RETURN_TRUSTED_TYPE: false });
+        }
+
         /* ---- MAIN LOAD ---- */
         function loadDashboard() {
             hideError();
             Promise.all([
                 fetchJSON(API_BASE + '/dashboard?mode=' + currentMode),
                 fetchJSON(API_BASE + '/equity-curve?mode=' + currentMode),
-                fetchJSON(API_BASE + '/strategy-curves?mode=' + currentMode)
+                fetchJSON(API_BASE + '/strategy-curves?mode=' + currentMode),
+                fetchJSON(API_BASE + '/strategies/overview')
             ])
             .then(function(results) {
                 var dashData = results[0];
                 var curveData = results[1];
                 var stratData = results[2];
+                var strategiesOverview = results[3];
 
                 if (dashData.error) showError(dashData.error + ' \u2014 Showing ' + dashData.mode + ' mode data.');
 
@@ -639,6 +725,7 @@
                 renderTrades(dashData);
                 renderCharts(curveData, dashData);
                 renderStrategyChart(stratData);
+                renderStrategies(strategiesOverview.strategies || []);
 
                 var now = new Date();
                 document.getElementById('last-updated').textContent = 'Updated ' +
