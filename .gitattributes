@@ -1,1 +1,4 @@
 *.py text=lf
+*.yml text=lf
+*.yaml text=lf
+*.md text=lf
