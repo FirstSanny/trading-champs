@@ -3,11 +3,7 @@
 import tempfile
 from unittest.mock import ANY, MagicMock, patch
 
-from trading_champs.core.loop_state import (
-    LoopState,
-    LoopStateStore,
-    RedisDistributedLock,
-)
+from trading_champs.core.loop_state import LoopState, LoopStateStore, RedisDistributedLock
 
 
 class TestLoopState:

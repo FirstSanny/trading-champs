@@ -2,8 +2,6 @@
 
 import time
 
-import pytest
-
 from trading_champs.core.drift_detector import DriftDetector
 from trading_champs.core.drift_store import DriftStore, DryRunFill
 
@@ -73,7 +71,9 @@ class TestDriftDetector:
         # Paper fills at 101.5 (1.5% divergence — above 0.5% threshold)
         # Need 3 fills to meet window=3
         for i in range(3):
-            alert = detector.check_drift("AAPL", paper_entry_price=101.5, bar_timestamp=base_time + i * 60)
+            alert = detector.check_drift(
+                "AAPL", paper_entry_price=101.5, bar_timestamp=base_time + i * 60
+            )
             if i < 2:
                 assert alert is None  # Not enough trades yet
             else:

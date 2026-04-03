@@ -158,7 +158,7 @@ class AlpacaMarketDataConnector(BaseConnector):
 
                 if resp.status_code == 429:
                     # Rate limited — retry with backoff
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     logger.warning(f"Alpaca Data API rate limited, retrying in {wait_time}s")
                     time.sleep(wait_time)
                     continue
@@ -171,7 +171,7 @@ class AlpacaMarketDataConnector(BaseConnector):
 
             except requests.exceptions.HTTPError as e:
                 if e.response is not None and e.response.status_code == 429:
-                    wait_time = 2 ** attempt
+                    wait_time = 2**attempt
                     logger.warning(f"Alpaca Data API rate limited, retrying in {wait_time}s")
                     time.sleep(wait_time)
                     continue
@@ -213,7 +213,9 @@ class AlpacaMarketDataConnector(BaseConnector):
                     low=float(bar.get("l", 0)),
                     close=float(bar.get("c", 0)),
                     volume=float(bar.get("v", 0)),
-                    quote_volume=float(bar.get("vw", 0)) * float(bar.get("v", 0)) if bar.get("vw") else None,
+                    quote_volume=(
+                        float(bar.get("vw", 0)) * float(bar.get("v", 0)) if bar.get("vw") else None
+                    ),
                 )
                 result.append(price_bar)
             except (ValueError, TypeError) as e:

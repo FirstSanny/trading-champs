@@ -3,14 +3,9 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Optional
+from typing import Optional
 
-from trading_champs.core.stage_config import (
-    STAGE_CONFIGS,
-    StageConfig,
-    get_stage_config,
-    next_stage,
-)
+from trading_champs.core.stage_config import STAGE_CONFIGS, get_stage_config, next_stage
 from trading_champs.core.stage_history import StageHistory, StageTransition
 
 logger = logging.getLogger(__name__)
@@ -76,13 +71,12 @@ class StageEvaluator:
             demote_stage = config.demotes_to
             # If demote_stage == current_stage, already at minimum — no-op
             if demote_stage == current_stage:
-                logger.info(
-                    f"Strategy {strategy_id} at {current_stage}, cannot demote further"
-                )
+                logger.info(f"Strategy {strategy_id} at {current_stage}, cannot demote further")
                 return None
             logger.warning(
                 f"Strategy {strategy_id} demoted from {current_stage} to {demote_stage}: "
-                f"drawdown {metrics.current_drawdown_pct:.2f}% exceeds max {config.max_drawdown_pct}%"
+                f"drawdown {metrics.current_drawdown_pct:.2f}% exceeds "
+                f"max {config.max_drawdown_pct}%"
             )
             return self._transition(
                 strategy_id,
@@ -112,7 +106,6 @@ class StageEvaluator:
             )
             return None
 
-        next_config = get_stage_config(next_stage_name)
         logger.info(
             f"Strategy {strategy_id} promoted from {current_stage} to {next_stage_name}: "
             f"trades={metrics.total_trades}, win_rate={metrics.win_rate:.2f}, "
