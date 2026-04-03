@@ -749,6 +749,11 @@
         updateAutoUI();
         loadDashboard();
         if (autoRefresh) startPolling();
+
+        /* expose onclick handlers to global scope */
+        window.setMode = setMode;
+        window.toggleAuto = toggleAuto;
+        window.toggleSection = toggleSection;
     })();
     </script>
 </body>
