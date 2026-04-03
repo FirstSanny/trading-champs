@@ -10,10 +10,14 @@ from typing import Any, Literal, Optional
 from trading_champs.core import metrics as _metrics
 from trading_champs.core.executor import ExecResult, ExecStatus, TradeExecutor
 from trading_champs.core.loop_state import LoopConfig, LoopState, LoopStateStore
-from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector, create_connector
+from trading_champs.data.connectors.alpaca_connector import (
+    AlpacaConnector,
+    AlpacaPaperConnector,
+    create_connector,
+)
 from trading_champs.data.connectors.alpaca_market_data_connector import AlpacaMarketDataConnector
-from trading_champs.data.connectors.dry_run_connector import DryRunConnector
 from trading_champs.data.connectors.ccxt_connector import CCXTConnector
+from trading_champs.data.connectors.dry_run_connector import DryRunConnector
 from trading_champs.pl.tracker import PnLTracker
 from trading_champs.risk.position_sizer import PercentRisk
 from trading_champs.risk.stop_loss import FixedStopLoss
@@ -303,7 +307,13 @@ class TradingLoop:
             try:
                 # 1. Fetch price data
                 prices, latest_price, latest_bar_timestamp = self._fetch_prices(symbol)
-                result["signals"].append({"symbol": symbol, "price": latest_price, "bar_timestamp": latest_bar_timestamp.isoformat()})
+                result["signals"].append(
+                    {
+                        "symbol": symbol,
+                        "price": latest_price,
+                        "bar_timestamp": latest_bar_timestamp.isoformat(),
+                    }
+                )
 
                 # 2. Generate signal
                 signal = self._generate_signal(prices)

@@ -2,7 +2,6 @@
 
 import json
 import logging
-import os
 import sqlite3
 import threading
 import time
@@ -16,11 +15,7 @@ from trading_champs.core.drift_detector import DriftDetector
 from trading_champs.core.drift_store import DriftStore
 from trading_champs.core.loop import TradingLoop
 from trading_champs.core.loop_state import LoopConfig, LoopStateStore, RedisDistributedLock
-from trading_champs.core.stage_config import (
-    STAGE_CONFIGS,
-    StageConfig,
-    get_stage_config,
-)
+from trading_champs.core.stage_config import STAGE_CONFIGS, StageConfig, get_stage_config
 from trading_champs.core.stage_evaluator import StageEvaluator, StrategyMetrics
 from trading_champs.core.stage_history import StageHistory
 from trading_champs.pl.tracker import PnLTracker
@@ -235,7 +230,6 @@ class StrategyLoop:
     def get_metrics(self, stage_entered_at: datetime) -> StrategyMetrics:
         """Compute metrics from the tracker for stage evaluation."""
         closed_trades = self.tracker.trade_log.get_closed_trades()
-        open_trades = self.tracker.trade_log.get_open_trades()
 
         total_trades = len(closed_trades)
         if total_trades == 0:
@@ -268,7 +262,9 @@ class StrategyLoop:
 
         # Calculate Sharpe ratio (simplified: annualized return / annualized std)
         if len(equity_points) > 10:
-            returns = [equity_points[i] - equity_points[i - 1] for i in range(1, len(equity_points))]
+            returns = [
+                equity_points[i] - equity_points[i - 1] for i in range(1, len(equity_points))
+            ]
             if returns:
                 import statistics
 
@@ -281,7 +277,11 @@ class StrategyLoop:
             sharpe = None
 
         total_pnl = sum(t.pnl for t in closed_trades)
-        total_pnl_pct = (total_pnl / self.tracker.current_balance * 100) if self.tracker.current_balance > 0 else 0.0
+        total_pnl_pct = (
+            (total_pnl / self.tracker.current_balance * 100)
+            if self.tracker.current_balance > 0
+            else 0.0
+        )
 
         return StrategyMetrics(
             total_trades=total_trades,
@@ -419,9 +419,7 @@ class StrategyOrchestrator:
                 db_path=self._config.db_path,
             )
 
-    def iterate_all(
-        self, idempotency_key: Optional[str] = None
-    ) -> dict[str, Any]:
+    def iterate_all(self, idempotency_key: Optional[str] = None) -> dict[str, Any]:
         """Run one iteration across all strategy loops.
 
         Uses RedisDistributedLock to prevent concurrent invocations.
@@ -462,7 +460,9 @@ class StrategyOrchestrator:
         }
 
         # Run all strategy iterations in parallel via ThreadPoolExecutor
-        def run_strategy(strategy_id: str, strategy_loop: StrategyLoop) -> tuple[str, dict[str, Any]]:
+        def run_strategy(
+            strategy_id: str, strategy_loop: StrategyLoop
+        ) -> tuple[str, dict[str, Any]]:
             try:
                 # Update position_size_fraction from current stage_config before iterate
                 current_fraction = strategy_loop.config.stage_config.capital_fraction
@@ -529,9 +529,7 @@ class StrategyOrchestrator:
                     # Update position_size_fraction from new stage
                     new_stage_config = get_stage_config(transition.to_stage)
                     strategy_loop.config.stage_config = new_stage_config
-                    logger.info(
-                        f"Strategy {strategy_id} transitioned to {transition.to_stage}"
-                    )
+                    logger.info(f"Strategy {strategy_id} transitioned to {transition.to_stage}")
 
             except Exception as e:
                 logger.error(f"Strategy {strategy_id} evaluation error: {e}")
@@ -545,13 +543,10 @@ class StrategyOrchestrator:
     def get_all_strategy_states(self) -> dict[str, StrategyState]:
         """Get current state for all strategies."""
         return {
-            strategy_id: self._state_store.load(strategy_id)
-            for strategy_id in self._strategy_loops
+            strategy_id: self._state_store.load(strategy_id) for strategy_id in self._strategy_loops
         }
 
-    def get_stage_history(
-        self, strategy_id: str, limit: int = 50
-    ) -> list:
+    def get_stage_history(self, strategy_id: str, limit: int = 50) -> list:
         """Get stage history for a strategy."""
         return self._stage_history.get_history(strategy_id, limit=limit)
 

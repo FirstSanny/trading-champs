@@ -53,15 +53,15 @@ class DriftStore:
 
             # Trim if over capacity — remove oldest half of fills
             if self._total_fills > self._max_entries:
-                sorted_keys = sorted(self._entries.keys(), key=lambda k: self._entries[k][0].fill_time)
+                sorted_keys = sorted(
+                    self._entries.keys(), key=lambda k: self._entries[k][0].fill_time
+                )
                 for k in sorted_keys[: len(sorted_keys) // 2]:
                     for f in self._entries[k]:
                         self._total_fills -= 1
                     del self._entries[k]
 
-    def get_fill(
-        self, symbol: str, bar_timestamp: int
-    ) -> Optional[list[DryRunFill]]:
+    def get_fill(self, symbol: str, bar_timestamp: int) -> Optional[list[DryRunFill]]:
         """Get dry_run fills for a symbol and bar.
 
         Args:

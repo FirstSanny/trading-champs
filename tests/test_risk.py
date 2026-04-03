@@ -2,12 +2,7 @@
 
 import pytest
 
-from trading_champs.risk.portfolio import (
-    DrawdownTracker,
-    PortfolioRisk,
-    Position,
-    RiskMetrics,
-)
+from trading_champs.risk.portfolio import DrawdownTracker, PortfolioRisk, Position, RiskMetrics
 from trading_champs.risk.position_sizer import FixedSize, KellyCriterion, PercentRisk
 from trading_champs.risk.stop_loss import (
     ATRStopLoss,

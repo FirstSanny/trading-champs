@@ -66,9 +66,7 @@ class TestTradeExecutorDryRun:
         assert connector.mode == "dry_run"
         assert connector.is_connected() is True
         # No env vars needed for dry_run
-        result = connector.submit_order(
-            symbol="BTCUSDT", qty=1.0, side="buy", limit_price=50000.0
-        )
+        result = connector.submit_order(symbol="BTCUSDT", qty=1.0, side="buy", limit_price=50000.0)
         assert result["status"] == "filled"
 
     def test_has_position_works_with_dry_run(self):

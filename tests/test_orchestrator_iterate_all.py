@@ -3,8 +3,6 @@
 import tempfile
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from trading_champs.core.orchestrator import (
     OrchestratorConfig,
     StrategyLoopConfig,
@@ -61,14 +59,10 @@ class TestOrchestratorIterateAll:
         orchestrator = StrategyOrchestrator(configs, config=config)
 
         # Mock rsi to raise
-        orchestrator._strategy_loops["rsi"].iterate = MagicMock(
-            side_effect=Exception("rsi error")
-        )
+        orchestrator._strategy_loops["rsi"].iterate = MagicMock(side_effect=Exception("rsi error"))
         # Mock others to succeed
         for sid in ["macd", "bollinger"]:
-            orchestrator._strategy_loops[sid].iterate = MagicMock(
-                return_value={"status": "ok"}
-            )
+            orchestrator._strategy_loops[sid].iterate = MagicMock(return_value={"status": "ok"})
 
         results = orchestrator._iterate_all_impl()
 
@@ -131,9 +125,7 @@ class TestOrchestratorIterateAll:
             "signals": [
                 {"symbol": "AAPL", "price": 150.0, "bar_timestamp": "2026-04-03T10:00:00+00:00"}
             ],
-            "actions": [
-                {"type": "enter", "symbol": "AAPL", "status": "filled", "price": 150.0}
-            ],
+            "actions": [{"type": "enter", "symbol": "AAPL", "status": "filled", "price": 150.0}],
         }
         slo.loop.iterate = MagicMock(return_value=mock_result)
 

@@ -2,9 +2,6 @@
 
 from datetime import datetime, timedelta
 
-import pytest
-
-from trading_champs.core.stage_config import get_stage_config
 from trading_champs.core.stage_evaluator import StageEvaluator, StrategyMetrics
 from trading_champs.core.stage_history import StageHistory
 

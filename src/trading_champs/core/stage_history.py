@@ -3,7 +3,7 @@
 import json
 import sqlite3
 import threading
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -86,7 +86,8 @@ class StageHistory:
         conn.execute(
             """
             INSERT INTO stage_history
-            (strategy_id, from_stage, to_stage, trigger, metrics_snapshot, timestamp, actor, override_reason)
+            (strategy_id, from_stage, to_stage, trigger, metrics_snapshot,
+             timestamp, actor, override_reason)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
@@ -102,9 +103,7 @@ class StageHistory:
         )
         conn.commit()
 
-    def get_history(
-        self, strategy_id: str, limit: int = 50
-    ) -> list[StageTransition]:
+    def get_history(self, strategy_id: str, limit: int = 50) -> list[StageTransition]:
         """Get stage transition history for a strategy.
 
         Args:

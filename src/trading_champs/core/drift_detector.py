@@ -91,13 +91,13 @@ class DriftDetector:
 
             # Keep only the last window trades
             if len(self._divergences[symbol]) > self._window * 2:
-                self._divergences[symbol] = self._divergences[symbol][-self._window:]
+                self._divergences[symbol] = self._divergences[symbol][-self._window :]
 
             # Only check when we have enough trades
             if len(self._divergences[symbol]) < self._window:
                 return None
 
-            recent_divergences = self._divergences[symbol][-self._window:]
+            recent_divergences = self._divergences[symbol][-self._window :]
             avg_divergence = sum(recent_divergences) / len(recent_divergences)
 
             if avg_divergence > self._threshold:

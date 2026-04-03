@@ -260,7 +260,7 @@ class AlpacaConnector(BaseConnector):
 AlpacaPaperConnector = AlpacaConnector
 
 
-def create_connector(mode: str = "paper") -> "AlpacaConnector | DryRunConnector":
+def create_connector(mode: str = "paper") -> AlpacaConnector:
     """Create the appropriate trading connector for the given mode.
 
     Args:
