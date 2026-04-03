@@ -61,7 +61,8 @@ DRY_RUN = StageConfig(
     stage_name="dry_run",
     min_trades=20,
     min_win_rate=0.55,
-    max_drawdown_pct=10.0,
+    max_drawdown_pct=6.0,  # 6% max drawdown for dry_run (equities)
+    days_in_stage_min=5,  # 5 trading days (4H bars produce signals faster)
     capital_fraction=0.0,
     demotes_to="dry_run",
 )
@@ -71,6 +72,7 @@ PAPER = StageConfig(
     min_trades=20,
     min_win_rate=0.55,
     max_drawdown_pct=8.0,
+    days_in_stage_min=5,
     capital_fraction=0.1,
     demotes_to="dry_run",
 )
@@ -79,8 +81,9 @@ LIVE_STAGE_1 = StageConfig(
     stage_name="live_stage_1",
     min_trades=30,
     min_win_rate=0.55,
-    max_drawdown_pct=6.0,
-    capital_fraction=0.3,
+    max_drawdown_pct=10.0,
+    days_in_stage_min=7,
+    capital_fraction=0.25,
     demotes_to="dry_run",
 )
 
@@ -88,8 +91,9 @@ LIVE_STAGE_2 = StageConfig(
     stage_name="live_stage_2",
     min_trades=50,
     min_win_rate=0.60,
-    max_drawdown_pct=5.0,
-    capital_fraction=0.6,
+    max_drawdown_pct=12.0,
+    days_in_stage_min=14,
+    capital_fraction=0.40,
     demotes_to="live_stage_1",
 )
 
