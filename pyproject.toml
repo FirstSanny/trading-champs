@@ -24,6 +24,7 @@ dependencies = [
     "prometheus-client>=0.17.0",
     "fastapi>=0.100.0",
     "uvicorn>=0.22.0",
+    "httpx>=0.25.0",
 ]
 
 [project.optional-dependencies]
