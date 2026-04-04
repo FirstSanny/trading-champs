@@ -1,11 +1,5 @@
 """Integration tests for watchlist API endpoints in api/index.py."""
 
-import os
-
-os.environ["API_SECRET"] = "test-secret-key"
-os.environ["SUPABASE_URL"] = ""
-os.environ["SUPABASE_ANON_KEY"] = ""
-
 from unittest.mock import MagicMock
 
 import pytest
