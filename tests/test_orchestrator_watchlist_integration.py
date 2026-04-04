@@ -12,24 +12,23 @@ class TestOrchestratorWatchlistIntegration:
         mock_repo = MagicMock()
         mock_repo.get_enabled_symbols.return_value = ["BTC/USDT", "ETH/USDT"]
 
-        with patch("api.index._get_watchlist_repo", return_value=mock_repo):
-            from trading_champs.core.orchestrator import Orchestrator
+        from trading_champs.core.orchestrator import StrategyOrchestrator
 
-            mock_config = MagicMock()
-            mock_config.symbols = []
-            mock_config.max_position_size = 1.0
-            mock_config.max_total_exposure = 1.0
-            mock_config.watchlist_repository = mock_repo
+        mock_config = MagicMock()
+        mock_config.symbols = []
+        mock_config.max_position_size = 1.0
+        mock_config.max_total_exposure = 1.0
+        mock_config.watchlist_repository = mock_repo
 
-            with patch.object(Orchestrator, "_iterate_all_impl", return_value=None):
-                Orchestrator(config=mock_config, scheduler=MagicMock())
+        with patch.object(StrategyOrchestrator, "_iterate_all_impl", return_value=None):
+            StrategyOrchestrator(config=mock_config)
 
-        # Verify repo was queried during construction (via _refresh_symbols_from_watchlist)
+        # Verify repo was queried during iterate_all (via _refresh_symbols_from_watchlist)
         mock_repo.get_enabled_symbols.assert_called()
 
     def test_iterate_all_skips_watchlist_when_not_configured(self):
         """When watchlist_repository is None, orchestrator silently skips."""
-        from trading_champs.core.orchestrator import Orchestrator
+        from trading_champs.core.orchestrator import StrategyOrchestrator
 
         mock_config = MagicMock()
         mock_config.symbols = ["BTC/USDT", "ETH/USDT"]
@@ -37,8 +36,8 @@ class TestOrchestratorWatchlistIntegration:
         mock_config.max_total_exposure = 1.0
         mock_config.watchlist_repository = None
 
-        with patch.object(Orchestrator, "_iterate_all_impl", return_value=None):
-            orch = Orchestrator(config=mock_config, scheduler=MagicMock())
+        with patch.object(StrategyOrchestrator, "_iterate_all_impl", return_value=None):
+            orch = StrategyOrchestrator(config=mock_config)
 
         # Should not raise
         orch.iterate_all()
