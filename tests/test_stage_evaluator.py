@@ -145,3 +145,62 @@ class TestStageEvaluator:
         # Gates check days_in_stage >= 5 for dry_run; with 0 it should fail
         # So no transition expected
         assert transition is None
+
+    def test_archived_consecutive_demotions(self):
+        """Case: consecutive_demotions >= limit → auto-archived."""
+        evaluator = self._make_evaluator()
+        stage_entered_at = datetime.utcnow() - timedelta(days=2)
+
+        # 3 consecutive demotions = limit for dry_run (default)
+        metrics = self._make_metrics(total_trades=5, win_rate=0.4, drawdown=2.0, days=2)
+
+        transition = evaluator.evaluate(
+            strategy_id="rsi",
+            current_stage="dry_run",
+            stage_entered_at=stage_entered_at,
+            metrics=metrics,
+            consecutive_demotions=3,
+        )
+
+        assert transition is not None
+        assert transition.from_stage == "dry_run"
+        assert transition.to_stage == "archived"
+        assert transition.trigger == "auto_archive_consecutive_demotions"
+
+    def test_archived_stalled_dry_run(self):
+        """Case: dry_run > 30 days with < 10 trades → auto-archived."""
+        evaluator = self._make_evaluator()
+        # 31 days in dry_run, only 5 trades
+        stage_entered_at = datetime.utcnow() - timedelta(days=31)
+
+        metrics = self._make_metrics(total_trades=5, win_rate=0.4, drawdown=2.0, days=31)
+
+        transition = evaluator.evaluate(
+            strategy_id="bollinger",
+            current_stage="dry_run",
+            stage_entered_at=stage_entered_at,
+            metrics=metrics,
+            consecutive_demotions=0,
+        )
+
+        assert transition is not None
+        assert transition.from_stage == "dry_run"
+        assert transition.to_stage == "archived"
+        assert transition.trigger == "auto_archive_stalled_dry_run"
+
+    def test_archived_stage_returns_none(self):
+        """Archived stage never triggers transitions."""
+        evaluator = self._make_evaluator()
+        stage_entered_at = datetime.utcnow() - timedelta(days=100)
+
+        metrics = self._make_metrics(total_trades=0, win_rate=0.0, drawdown=0.0, days=100)
+
+        # Should return None immediately — archived is terminal
+        transition = evaluator.evaluate(
+            strategy_id="macd",
+            current_stage="archived",
+            stage_entered_at=stage_entered_at,
+            metrics=metrics,
+        )
+
+        assert transition is None
