@@ -11,7 +11,7 @@ trading_champs/
 ├── config/           # Configuration files
 ├── scripts/          # Utility scripts
 ├── docs/             # Documentation
-└── .github/workflows/ # CI/CD pipelines
+└── .gitlab-ci.yml     # CI/CD pipelines
 ```
 
 ## Setup

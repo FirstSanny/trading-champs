@@ -13,7 +13,6 @@ cache:
     - .cache/pip
 
 test:
-  stage: test
   parallel:
     matrix:
       - PYTHON_VERSION: ["3.10", "3.11", "3.12"]

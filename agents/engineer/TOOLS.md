@@ -37,23 +37,28 @@ Use these gstack skills for common tasks:
 - `paperclip`: use for task coordination, assignment handling, status updates, delegation, and issue comments.
 - `para-memory-files`: use for memory capture, retrieval, planning, and weekly synthesis.
 
-## Domain Knowledge
+## Development Tools
 
-See `RESPONSIBILITIES.md` for full details on:
-- **Symbol management** — watchlist CRUD APIs (list, add, bulk add, delete, update)
-- **Strategy management** — strategy registry, stages, performance queries, archiving
+- Python development environment (uv, venv)
+- Git for version control
+- GitHub CLI for GitHub operations
+- Vercel CLI for deployment
 
-## Quick Reference
+## Code Quality
 
-| Action | Endpoint | Method |
-|--------|----------|--------|
-| List symbols | `/api/watchlist` | GET |
-| Add symbol | `/api/watchlist` | POST |
-| Bulk add | `/api/watchlist/bulk` | POST |
-| Delete symbol | `/api/watchlist/{symbol}` | DELETE |
-| Update symbol | `/api/watchlist/{symbol}` | PATCH |
-| List strategies | `/api/strategies` | GET |
-| Strategy overview | `/api/strategies/overview` | GET |
-| Archive strategy | `/api/strategies/{id}/archive` | PATCH |
+- `python-review` (everything-claude-code): Use for all Python code reviews.
+- `tdd-guide` (everything-claude-code): Use for test-driven development on new features.
+- `build-error-resolver` (everything-claude-code): Use when builds fail.
 
-All API calls require `Authorization: Bearer <API_SECRET>` header.
+## Available Skills
+
+- `everything-claude-code:python-review` -- Python code quality, security, and performance review.
+- `everything-claude-code:tdd-guide` -- Test-driven development enforcement.
+- `everything-claude-code:refactor-cleaner` -- Dead code cleanup and consolidation.
+
+## External APIs
+
+- Alpaca (paper trading API) -- for trading strategy backtesting
+- Vercel -- for deployment
+- GitHub -- for source control
+- Supabase -- for data storage
