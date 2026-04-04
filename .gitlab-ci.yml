@@ -8,7 +8,7 @@ variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
 
 cache:
-  key: "${CI_COMMIT_REF_SLUG}-pip"
+  key: pip-default
   paths:
     - .cache/pip
 
@@ -20,12 +20,8 @@ test:
   image: python:${PYTHON_VERSION}
   before_script:
     - pip install --upgrade pip
-    - pip install --no-cache-dir -r requirements.txt
-    - pip install --no-cache-dir -e ".[dev]"
+    - pip install --no-cache-dir -r requirements.txt -e ".[dev]"
   script:
-    - python -c "import sys; print(sys.path)"
-    - python -c "import trading_champs; print('OK:', trading_champs.__file__)"
-    - ls -la src/trading_champs/
     - pytest --cov=src --cov-report=xml
   coverage: /(?i)total.*?(\d+\.?\d+)%/
   artifacts:
@@ -35,45 +31,23 @@ test:
         coverage_format: cobertura
         path: coverage.xml
 
-lint:setup-python:
+lint:
   stage: lint
   image: python:3.10
   before_script:
     - pip install --upgrade pip
-    - pip install -r requirements.txt
-    - pip install black==26.3.1 isort==5.12.0 flake8==6.1.0
+    - pip install --no-cache-dir black==26.3.1 isort==5.12.0 flake8==6.1.0
   script:
     - black --check src/ tests/
-  allow_failure: false
-
-lint:isort:
-  stage: lint
-  image: python:3.10
-  before_script:
-    - pip install --upgrade pip
-    - pip install -r requirements.txt
-    - pip install black==26.3.1 isort==5.12.0 flake8==6.1.0
-  script:
     - isort --check-only src/ tests/
-  allow_failure: false
-
-lint:flake8:
-  stage: lint
-  image: python:3.10
-  before_script:
-    - pip install --upgrade pip
-    - pip install -r requirements.txt
-    - pip install black==26.3.1 isort==5.12.0 flake8==6.1.0
-  script:
     - flake8 --max-line-length=100 --extend-ignore=E203,W503 src/ tests/
-  allow_failure: false
 
 build:
   stage: build
   image: python:3.11
   before_script:
     - pip install --upgrade pip
-    - pip install build
+    - pip install --no-cache-dir build
   script:
     - python -m build
   artifacts:
@@ -89,7 +63,7 @@ deploy:vercel:
   stage: deploy
   image: node:20
   before_script:
-    - npm install -g vercel
+    - npm install -g vercel@34
   script:
     - vercel --prod --yes --token=$VERCEL_TOKEN
   environment:
