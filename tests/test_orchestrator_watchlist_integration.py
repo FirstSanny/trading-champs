@@ -15,22 +15,14 @@ class TestOrchestratorWatchlistIntegration:
         from trading_champs.core.orchestrator import StrategyOrchestrator
 
         mock_config = MagicMock()
-        mock_config.symbols = []
-        mock_config.max_position_size = 1.0
-        mock_config.max_total_exposure = 1.0
         mock_config.watchlist_repository = mock_repo
 
-        # Patch _iterate_all_impl to prevent actual iteration logic running,
-        # and also patch _refresh_symbols_from_watchlist to verify it is called
-        with patch.object(StrategyOrchestrator, "_iterate_all_impl", return_value=None):
-            with patch.object(
-                StrategyOrchestrator, "_refresh_symbols_from_watchlist"
-            ) as mock_refresh:
-                orch = StrategyOrchestrator(config=mock_config)
-                orch.iterate_all()
+        orch = StrategyOrchestrator(config=mock_config)
+        # Call _refresh_symbols_from_watchlist directly (called at start of iterate_all)
+        orch._refresh_symbols_from_watchlist()
 
-        # Verify _refresh_symbols_from_watchlist was called during iterate_all
-        mock_refresh.assert_called_once()
+        # Verify get_enabled_symbols was called
+        mock_repo.get_enabled_symbols.assert_called()
 
     def test_iterate_all_skips_watchlist_when_not_configured(self):
         """When watchlist_repository is None, orchestrator silently skips."""

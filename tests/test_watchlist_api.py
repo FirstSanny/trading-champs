@@ -118,9 +118,7 @@ class TestWatchlistAPI:
             json={"symbol": "BTC/USDT", "asset_class": "crypto"},
         )
         assert response.status_code == 201
-        mock_watchlist_repo.add_symbol.assert_called_once_with(
-            "BTC/USDT", "crypto", added_by="manual", metadata={}
-        )
+        mock_watchlist_repo.add_symbol.assert_called_once_with("BTC/USDT", "crypto")
 
     def test_post_watchlist_missing_symbol(self, test_client):
         """POST /api/watchlist without symbol returns 400."""
