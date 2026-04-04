@@ -51,8 +51,7 @@ class MarketDataStorage:
         """Initialize SQLite database schema."""
         conn = sqlite3.connect(self._db_path)
         cursor = conn.cursor()
-        cursor.execute(
-            """
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS price_bars (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
@@ -67,16 +66,12 @@ class MarketDataStorage:
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(symbol, timestamp, timeframe)
             )
-        """
-        )
-        cursor.execute(
-            """
+        """)
+        cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_price_bars_symbol_time
             ON price_bars(symbol, timestamp DESC)
-        """
-        )
-        cursor.execute(
-            """
+        """)
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS backtest_results (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 symbol TEXT NOT NULL,
@@ -94,14 +89,11 @@ class MarketDataStorage:
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(symbol, strategy_name, run_at)
             )
-        """
-        )
-        cursor.execute(
-            """
+        """)
+        cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_backtest_results_symbol_strategy
             ON backtest_results(symbol, strategy_name DESC)
-        """
-        )
+        """)
         conn.commit()
         conn.close()
         logger.info("Database initialized")
