@@ -402,8 +402,8 @@ def require_api_auth(request: Request) -> bool:
 
     Returns True if valid.
     """
-    import os
     import hmac
+    import os
 
     api_secret = os.environ.get("API_SECRET", "")
     cron_secret = os.environ.get("CRON_SECRET", "")
@@ -565,7 +565,14 @@ async def watchlist_api(request: Request) -> JSONResponse:
             return JSONResponse(content={"error": "symbol is required"}, status_code=400)
         if not asset_class:
             return JSONResponse(content={"error": "asset_class is required"}, status_code=400)
-        ok = repo.add_symbol(symbol, asset_class)
+        try:
+            ok = repo.add_symbol(symbol, asset_class)
+        except Exception as e:
+            from trading_champs.data.watchlist_repository import ValidationError
+
+            if isinstance(e, ValidationError):
+                return JSONResponse(content={"error": str(e)}, status_code=400)
+            raise
         if not ok:
             entry = repo.get_by_symbol(symbol)
             if entry is not None:
