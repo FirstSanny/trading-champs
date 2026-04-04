@@ -83,7 +83,7 @@ class DriftDetector:
             dry_run_fill = dry_run_fills[-1]
             dry_run_price = dry_run_fill.entry_price
 
-            if dry_run_price <= 0:
+            if dry_run_price is None or dry_run_price <= 0:
                 return None
 
             divergence = abs(paper_entry_price - dry_run_price) / dry_run_price

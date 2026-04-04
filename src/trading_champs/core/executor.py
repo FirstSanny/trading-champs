@@ -1,16 +1,21 @@
 """Trade executor that wraps Alpaca paper trading connector."""
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import requests
 
 from trading_champs.core import metrics as _metrics
 from trading_champs.data.connectors.alpaca_connector import AlpacaPaperConnector
 from trading_champs.pl.tracker import Trade, TradeSide
+
+if TYPE_CHECKING:
+    from trading_champs.data.connectors.dry_run_connector import DryRunConnector
 
 logger = logging.getLogger(__name__)
 
@@ -46,16 +51,16 @@ class TradeExecutor:
     concepts (symbol, side, quantity) and Alpaca order semantics.
     """
 
-    def __init__(self, connector: AlpacaPaperConnector):
+    def __init__(self, connector: AlpacaPaperConnector | DryRunConnector):
         """Initialize executor with an Alpaca connector.
 
         Args:
-            connector: Connected AlpacaPaperConnector instance.
+            connector: Connected AlpacaPaperConnector or DryRunConnector instance.
         """
         self._connector = connector
 
     @property
-    def connector(self) -> AlpacaPaperConnector:
+    def connector(self) -> AlpacaPaperConnector | DryRunConnector:
         return self._connector
 
     def _is_dry_run(self) -> bool:

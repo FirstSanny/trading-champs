@@ -91,10 +91,11 @@ class AlpacaMarketDataConnector(BaseConnector):
             raise ConnectionError("Alpaca Data API secret not configured (ALPACA_DATA_API_SECRET)")
 
         # Test with a simple request
+        test_params: dict[str, str | int] = {"symbols": "AAPL", "limit": 1}
         try:
             resp = requests.get(
                 f"{ALPACA_DATA_API}/bars",
-                params={"symbols": "AAPL", "limit": 1},
+                params=test_params,
                 headers=self._headers,
                 timeout=10,
             )
@@ -137,7 +138,7 @@ class AlpacaMarketDataConnector(BaseConnector):
         if not self.is_connected():
             raise ConnectionError("Not connected to Alpaca Market Data API")
 
-        params: dict[str, Any] = {
+        params: dict[str, str | int | None] = {
             "symbols": symbol.upper(),
             "timeframe": _timeframe_to_alpaca(timeframe),
             "limit": min(limit, 1000),

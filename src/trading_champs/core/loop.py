@@ -33,7 +33,7 @@ class _Action:
 
     action_type: Literal["open", "close"]
     symbol: str
-    qty: float
+    qty: Optional[float]
     tracker_trade_id: Optional[str] = None
     strategy: str = "default"
     order_type: str = "market"
@@ -168,8 +168,11 @@ class TradingLoop:
     def _get_account_balance(self) -> float:
         """Get current account balance from Alpaca."""
         try:
-            account = self._ensure_alpaca().get_account()
-            return float(account.get("cash", 0))
+            connector = self._ensure_alpaca()
+            if hasattr(connector, "get_account"):
+                account = connector.get_account()
+                return float(account.get("cash", 0))
+            return self.tracker.current_balance
         except Exception:
             return self.tracker.current_balance
 
@@ -446,6 +449,8 @@ class TradingLoop:
         for attempt in range(max_retries + 1):
             with _metrics.alpaca_api_duration_seconds.time():
                 if action.action_type == "open":
+                    if action.qty is None:
+                        raise ValueError(f"open action requires qty for {action.symbol}")
                     result = self.executor.open_long(
                         symbol=action.symbol,
                         qty=action.qty,
