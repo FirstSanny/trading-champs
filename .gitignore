@@ -81,3 +81,8 @@ Thumbs.db
 
 # Playwright
 .playwright-mcp
+
+# Agent and project metadata
+.claude/
+memory/
+public/
