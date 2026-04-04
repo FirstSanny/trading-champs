@@ -6,8 +6,9 @@ os.environ["API_SECRET"] = "test-secret-key"
 os.environ["SUPABASE_URL"] = ""
 os.environ["SUPABASE_ANON_KEY"] = ""
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 
 @pytest.fixture
