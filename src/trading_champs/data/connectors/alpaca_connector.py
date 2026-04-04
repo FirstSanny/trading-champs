@@ -1,13 +1,18 @@
 """Alpaca Trading API connector for trading and account operations."""
 
+from __future__ import annotations
+
 import logging
 import os
 from decimal import Decimal
-from typing import Any, List, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
 
 import requests
 
 from trading_champs.data.connectors.base import BaseConnector, PriceBar
+
+if TYPE_CHECKING:
+    from trading_champs.data.connectors.dry_run_connector import DryRunConnector
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +265,7 @@ class AlpacaConnector(BaseConnector):
 AlpacaPaperConnector = AlpacaConnector
 
 
-def create_connector(mode: str = "paper") -> AlpacaConnector:
+def create_connector(mode: str = "paper") -> "AlpacaConnector | DryRunConnector":
     """Create the appropriate trading connector for the given mode.
 
     Args:

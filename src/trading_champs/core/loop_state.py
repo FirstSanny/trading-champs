@@ -214,7 +214,8 @@ class RedisDistributedLock:
             return None
 
         try:
-            return redis.get(f"{self.IDEMPOTENCY_KEY_PREFIX}{idempotency_key}")
+            result = redis.get(f"{self.IDEMPOTENCY_KEY_PREFIX}{idempotency_key}")
+            return result.decode("utf-8") if result else None
         except Exception:
             return None
 

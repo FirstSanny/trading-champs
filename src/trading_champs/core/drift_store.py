@@ -14,7 +14,7 @@ class DryRunFill:
 
     symbol: str
     bar_timestamp: int  # Unix timestamp of the bar close
-    entry_price: float
+    entry_price: Optional[float]
     exit_price: Optional[float]
     side: str  # "long" or "short"
     fill_time: float  # Unix timestamp when fill was recorded

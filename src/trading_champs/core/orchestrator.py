@@ -242,7 +242,7 @@ class StrategyLoop:
                 total_pnl_pct=0.0,
             )
 
-        winning_trades = sum(1 for t in closed_trades if t.pnl > 0)
+        winning_trades = sum(1 for t in closed_trades if t.pnl is not None and t.pnl > 0)
         win_rate = winning_trades / total_trades
 
         # Calculate current drawdown from trade log equity progression
@@ -276,7 +276,7 @@ class StrategyLoop:
         else:
             sharpe = None
 
-        total_pnl = sum(t.pnl for t in closed_trades)
+        total_pnl = sum(t.pnl for t in closed_trades if t.pnl is not None)
         total_pnl_pct = (
             (total_pnl / self.tracker.current_balance * 100)
             if self.tracker.current_balance > 0

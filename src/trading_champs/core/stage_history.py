@@ -44,10 +44,14 @@ class StageHistory:
 
     def _get_conn(self) -> sqlite3.Connection:
         """Get thread-local database connection."""
+        conn: sqlite3.Connection
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(self._db_path, check_same_thread=False)
-            self._local.conn.row_factory = sqlite3.Row
-        return self._local.conn
+            conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            self._local.conn = conn
+        else:
+            conn = self._local.conn
+        return conn
 
     def _init_db(self) -> None:
         """Create tables if they don't exist."""
