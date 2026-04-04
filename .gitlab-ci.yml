@@ -41,7 +41,7 @@ lint:setup-python:
   before_script:
     - pip install --upgrade pip
     - pip install -r requirements.txt
-    - pip install black==23.7.0 isort==5.12.0 flake8==6.1.0
+    - pip install black==26.3.1 isort==5.12.0 flake8==6.1.0
   script:
     - black --check src/ tests/
   allow_failure: false
@@ -52,7 +52,7 @@ lint:isort:
   before_script:
     - pip install --upgrade pip
     - pip install -r requirements.txt
-    - pip install black==23.7.0 isort==5.12.0 flake8==6.1.0
+    - pip install black==26.3.1 isort==5.12.0 flake8==6.1.0
   script:
     - isort --check-only src/ tests/
   allow_failure: false
@@ -63,7 +63,7 @@ lint:flake8:
   before_script:
     - pip install --upgrade pip
     - pip install -r requirements.txt
-    - pip install black==23.7.0 isort==5.12.0 flake8==6.1.0
+    - pip install black==26.3.1 isort==5.12.0 flake8==6.1.0
   script:
     - flake8 --max-line-length=100 --extend-ignore=E203,W503 src/ tests/
   allow_failure: false
