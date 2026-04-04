@@ -1,0 +1,58 @@
+stages:
+  - test
+  - lint
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip
+
+test:
+  stage: test
+  image: python:3.12
+  script:
+    - python -m pip install --upgrade pip
+    - pip install --no-cache-dir -r requirements.txt
+    - pip install --no-cache-dir -e ".[dev]"
+    - python -c "import sys; print(sys.path)"
+    - python -c "import trading_champs; print('OK:', trading_champs.__file__)"
+    - ls -la src/trading_champs/
+    - pytest --cov=src --cov-report=xml
+    - mypy src/
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+test:python310:
+  stage: test
+  image: python:3.10
+  script:
+    - python -m pip install --upgrade pip
+    - pip install --no-cache-dir -r requirements.txt
+    - pip install --no-cache-dir -e ".[dev]"
+    - pytest --cov=src --cov-report=xml
+    - mypy src/
+
+test:python311:
+  stage: test
+  image: python:3.11
+  script:
+    - python -m pip install --upgrade pip
+    - pip install --no-cache-dir -r requirements.txt
+    - pip install --no-cache-dir -e ".[dev]"
+    - pytest --cov=src --cov-report=xml
+    - mypy src/
+
+lint:
+  stage: lint
+  image: python:3.12
+  script:
+    - pip install black isort flake8
+    - black --check src/ tests/
+    - isort --check-only src/ tests/
+    - flake8 --max-line-length=100 --extend-ignore=E203,W503 src/ tests/

@@ -7,6 +7,10 @@ python-dateutil>=2.8.0
 pandas>=2.0.0
 numpy>=1.24.0
 
+# Sentiment analysis
+vaderSentiment>=3.3.2
+praw>=7.7.0
+
 # Data ingestion
 ccxt>=4.0.0
 websocket-client>=1.6.0

@@ -73,3 +73,9 @@ Thumbs.db
 /data/
 *.sqlite
 .vercel
+.gstack/
+
+# Agent and project metadata
+.claude/
+memory/
+public/
