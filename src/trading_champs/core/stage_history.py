@@ -56,8 +56,7 @@ class StageHistory:
     def _init_db(self) -> None:
         """Create tables if they don't exist."""
         conn = self._get_conn()
-        conn.execute(
-            """
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS stage_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 strategy_id TEXT NOT NULL,
@@ -70,14 +69,11 @@ class StageHistory:
                 override_reason TEXT,
                 UNIQUE(strategy_id, timestamp)
             )
-            """
-        )
-        conn.execute(
-            """
+            """)
+        conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_stage_history_strategy_id
             ON stage_history(strategy_id)
-            """
-        )
+            """)
         conn.commit()
 
     def append(self, transition: StageTransition) -> None:

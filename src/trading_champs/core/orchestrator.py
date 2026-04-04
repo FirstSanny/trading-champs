@@ -308,16 +308,14 @@ class StrategyStateStore:
         with self._lock:
             Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
             conn = sqlite3.connect(self._db_path)
-            conn.execute(
-                """
+            conn.execute("""
                 CREATE TABLE IF NOT EXISTS strategy_state (
                     strategy_id TEXT PRIMARY KEY,
                     stage TEXT NOT NULL,
                     stage_entered_at TEXT NOT NULL,
                     current_metrics TEXT NOT NULL DEFAULT '{}'
                 )
-                """
-            )
+                """)
             conn.commit()
             conn.close()
 
