@@ -1,9 +1,6 @@
 """Moving Average Crossover strategies."""
 
-from typing import Sequence
-
 from trading_champs.signals.detectors.crossover import CrossoverDetector, SignalType
-from trading_champs.signals.engine import SignalConfig
 from trading_champs.signals.indicators.moving_averages import SMA
 
 from .base import AbstractStrategy

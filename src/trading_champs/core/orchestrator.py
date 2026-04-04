@@ -433,6 +433,7 @@ class StrategyOrchestrator:
         # Build strategy configs: use provided list OR auto-create from registry
         if strategies is None:
             from trading_champs.signals.strategies import create_orchestrator_configs
+
             strategies = create_orchestrator_configs(
                 StrategyLoopConfig,
                 defaults=strategy_defaults,

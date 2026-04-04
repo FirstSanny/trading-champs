@@ -74,7 +74,10 @@ class StageEvaluator:
         # --- Archival triggers ---
 
         # Trigger 1: Consecutive demotions exceeded limit
-        if config.consecutive_demote_limit > 0 and consecutive_demotions >= config.consecutive_demote_limit:
+        if (
+            config.consecutive_demote_limit > 0
+            and consecutive_demotions >= config.consecutive_demote_limit
+        ):
             logger.warning(
                 f"Strategy {strategy_id} archived: {consecutive_demotions} consecutive demotions "
                 f"(limit={config.consecutive_demote_limit})"

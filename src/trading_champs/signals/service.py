@@ -43,8 +43,7 @@ class SignalService:
         strategy_class = STRATEGY_REGISTRY.get(strategy)
         if strategy_class is None:
             raise ValueError(
-                f"Unknown strategy: {strategy!r}. "
-                f"Available: {list(STRATEGY_REGISTRY.keys())}"
+                f"Unknown strategy: {strategy!r}. " f"Available: {list(STRATEGY_REGISTRY.keys())}"
             )
         instance = strategy_class(self.prices, self.config)
         return instance.detect()
