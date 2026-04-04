@@ -14,7 +14,7 @@ class TestWatchlistAPI:
     """Tests for /api/watchlist endpoints."""
 
     def _make_client(self, mock_repo: MagicMock):
-        with patch("api.index._get_watchlist_repo", return_value=mock_repo):
+        with patch("api.index._watchlist_repo", mock_repo):
             from api.index import app
             return TestClient(app)
 
