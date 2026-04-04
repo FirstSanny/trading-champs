@@ -48,7 +48,9 @@ class StageHistory:
             self._init_db()
             self._db_initialized = True
         except Exception as e:
-            logger.warning(f"StageHistory[{db_path}]: SQLite unavailable ({e}) — running without persistence")
+            logger.warning(
+                f"StageHistory[{db_path}]: SQLite unavailable ({e}) — running without persistence"
+            )
             self._db_initialized = False
 
     def _get_conn(self) -> sqlite3.Connection:
@@ -65,7 +67,8 @@ class StageHistory:
     def _init_db(self) -> None:
         """Create tables if they don't exist."""
         conn = self._get_conn()
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS stage_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 strategy_id TEXT NOT NULL,
@@ -78,11 +81,14 @@ class StageHistory:
                 override_reason TEXT,
                 UNIQUE(strategy_id, timestamp)
             )
-            """)
-        conn.execute("""
+            """
+        )
+        conn.execute(
+            """
             CREATE INDEX IF NOT EXISTS idx_stage_history_strategy_id
             ON stage_history(strategy_id)
-            """)
+            """
+        )
         conn.commit()
 
     def append(self, transition: StageTransition) -> None:
