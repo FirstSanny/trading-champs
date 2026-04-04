@@ -101,6 +101,7 @@ class OrchestratorConfig:
     db_path: str = ".loop_state.db"
     redis_url: str = "redis://localhost:6379/0"
     lock_ttl_seconds: int = 120
+    watchlist_repository: Any = None  # WatchlistRepository instance, or None to skip
 
 
 class StrategyLoop:
@@ -485,12 +486,47 @@ class StrategyOrchestrator:
         finally:
             lock.release(idempotency_key)
 
+    def _refresh_symbols_from_watchlist(self) -> None:
+        """Fetch enabled symbols from watchlist and distribute across strategy loops.
+
+        Symbols are distributed round-robin across all strategy loops so each
+        strategy sees a non-overlapping subset. If watchlist_repository is None,
+        this is a no-op (env-var symbols are used instead).
+        """
+        if self._config.watchlist_repository is None:
+            return
+
+        try:
+            symbols = self._config.watchlist_repository.get_enabled_symbols()
+        except Exception as e:
+            logger.warning("Watchlist fetch failed, symbols unchanged: %s", e)
+            return
+
+        if not symbols:
+            return
+
+        # Round-robin distribution across strategy loops
+        loops = list(self._strategy_loops.values())
+        for i, symbol in enumerate(symbols):
+            loop = loops[i % len(loops)]
+            loop.config.symbols = [symbol]
+            loop.loop.config.symbols = [symbol]
+
+        logger.debug(
+            "Watchlist: %d symbols distributed across %d strategy loops",
+            len(symbols),
+            len(loops),
+        )
+
     def _iterate_all_impl(self) -> dict[str, Any]:
         """Internal iterate_all implementation (called after lock acquired)."""
         results: dict[str, Any] = {
             "timestamp": datetime.utcnow().isoformat(),
             "strategies": {},
         }
+
+        # Refresh symbols from watchlist DB before iterating
+        self._refresh_symbols_from_watchlist()
 
         # Run all strategy iterations in parallel via ThreadPoolExecutor
         def run_strategy(

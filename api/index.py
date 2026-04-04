@@ -432,7 +432,12 @@ def require_api_auth(request: Request) -> bool:
 def auth_guard(request: Request) -> JSONResponse | None:
     """Returns 401 JSONResponse if auth fails, None if auth passes."""
     # Dashboard API is public - no auth required for main dashboard data
-    if request.url.path in ("/api/dashboard", "/api/equity-curve", "/api/strategy-curves", "/api/strategies/overview"):
+    if request.url.path in (
+        "/api/dashboard",
+        "/api/equity-curve",
+        "/api/strategy-curves",
+        "/api/strategies/overview",
+    ):
         return None
     if require_api_auth(request):
         return None
@@ -508,6 +513,114 @@ async def strategy_curves_api(request: Request) -> JSONResponse:
     return JSONResponse(content=data)
 
 
+async def watchlist_api(request: Request) -> JSONResponse:
+    """Handle all /api/watchlist routes.
+
+    GET /api/watchlist          — list all entries
+    POST /api/watchlist         — add a symbol
+    DELETE /api/watchlist/{sym} — soft-delete a symbol
+    PATCH /api/watchlist/{sym}  — update enabled/metadata
+    POST /api/watchlist/bulk    — bulk add symbols
+    """
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
+
+    repo = _get_watchlist_repo()
+    path = request.url.path
+    method = request.method
+
+    # GET /api/watchlist
+    if method == "GET" and path == "/api/watchlist":
+        entries = repo.get_all_entries()
+        return JSONResponse(content={"symbols": [e.to_dict() for e in entries]})
+
+    # POST /api/watchlist/bulk
+    if method == "POST" and path == "/api/watchlist/bulk":
+        body = await request.body()
+        body_str = body.decode() if body else ""
+        content_type = request.headers.get("content-type", "")
+        data = parse_post_body(body_str, content_type)
+        entries = data.get("entries", [])
+        added_by = data.get("added_by", "manual")
+        if not entries:
+            return JSONResponse(
+                content={"error": "entries (list) is required"},
+                status_code=400,
+            )
+        try:
+            count, errors = repo.bulk_add(entries, added_by=added_by)
+            return JSONResponse(content={"added": count, "errors": errors}, status_code=201)
+        except Exception as e:
+            return JSONResponse(content={"error": str(e)}, status_code=400)
+
+    # POST /api/watchlist (single add)
+    if method == "POST" and path == "/api/watchlist":
+        body = await request.body()
+        body_str = body.decode() if body else ""
+        content_type = request.headers.get("content-type", "")
+        data = parse_post_body(body_str, content_type)
+        symbol = data.get("symbol")
+        asset_class = data.get("asset_class")
+        if not symbol:
+            return JSONResponse(content={"error": "symbol is required"}, status_code=400)
+        if not asset_class:
+            return JSONResponse(content={"error": "asset_class is required"}, status_code=400)
+        ok = repo.add_symbol(symbol, asset_class)
+        if not ok:
+            entry = repo.get_by_symbol(symbol)
+            if entry is not None:
+                return JSONResponse(
+                    content={"error": f"Symbol '{symbol}' already exists"},
+                    status_code=409,
+                )
+            return JSONResponse(content={"error": "Failed to add symbol"}, status_code=500)
+        entry = repo.get_by_symbol(symbol)
+        return JSONResponse(content=entry.to_dict() if entry else {}, status_code=201)
+
+    # DELETE /api/watchlist/{symbol}
+    if method == "DELETE" and path.startswith("/api/watchlist/"):
+        symbol = path.split("/api/watchlist/")[-1]
+        ok = repo.soft_delete(symbol)
+        if not ok:
+            return JSONResponse(
+                content={"error": f"Symbol '{symbol}' not found"},
+                status_code=404,
+            )
+        return JSONResponse(content={"symbol": symbol})
+
+    # PATCH /api/watchlist/{symbol}
+    if method == "PATCH" and path.startswith("/api/watchlist/"):
+        symbol = path.split("/api/watchlist/")[-1]
+        body = await request.body()
+        body_str = body.decode() if body else ""
+        content_type = request.headers.get("content-type", "")
+        data = parse_post_body(body_str, content_type)
+        enabled = None
+        if "enabled" in data:
+            enabled = data["enabled"].lower() not in ("false", "0", "no")
+        metadata = None
+        if "metadata" in data:
+            import json
+
+            try:
+                metadata = json.loads(data["metadata"])
+            except (json.JSONDecodeError, TypeError):
+                return JSONResponse(
+                    content={"error": "metadata must be a JSON object"},
+                    status_code=400,
+                )
+        ok = repo.update_symbol(symbol, enabled=enabled, metadata=metadata)
+        if not ok:
+            return JSONResponse(
+                content={"error": f"Symbol '{symbol}' not found"},
+                status_code=404,
+            )
+        entry = repo.get_by_symbol(symbol)
+        return JSONResponse(content=entry.to_dict() if entry else {})
+
+    return JSONResponse(content={"error": "Not found"}, status_code=404)
+
+
 async def strategies_api(request: Request) -> JSONResponse:
     """Return list of all strategies as JSON."""
     if (err_resp := auth_guard(request)) is not None:
@@ -519,6 +632,22 @@ async def strategies_api(request: Request) -> JSONResponse:
 # Orchestrator singleton (lazily initialized)
 _orchestrator: "StrategyOrchestrator | None" = None  # type: ignore[name-defined]
 _orchestrator_lock = threading.Lock()
+
+# Watchlist repository singleton (lazily initialized)
+_watchlist_repo: "WatchlistRepository | None" = None  # type: ignore[name-defined]
+_watchlist_repo_lock = threading.Lock()
+
+
+def _get_watchlist_repo() -> "WatchlistRepository":  # type: ignore[name-defined]
+    """Get or create the WatchlistRepository singleton (thread-safe)."""
+    global _watchlist_repo
+    if _watchlist_repo is None:
+        with _watchlist_repo_lock:
+            if _watchlist_repo is None:
+                from trading_champs.data.watchlist_repository import WatchlistRepository
+
+                _watchlist_repo = WatchlistRepository()
+    return _watchlist_repo
 
 
 def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
@@ -555,7 +684,9 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                     {
                         "symbols": [per_symbol[i]],
                         "timeframe": os.environ.get("ORCHESTRATOR_TIMEFRAME", "4h"),
-                        "data_connector": os.environ.get("ORCHESTRATOR_DATA_CONNECTOR", "alpaca_market"),
+                        "data_connector": os.environ.get(
+                            "ORCHESTRATOR_DATA_CONNECTOR", "alpaca_market"
+                        ),
                         "exec_connector": os.environ.get("ORCHESTRATOR_EXEC_CONNECTOR", "alpaca"),
                     }
                     for i in range(len(strategy_ids))
@@ -568,7 +699,9 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
 
                 _orchestrator = StrategyOrchestrator(
                     strategies=strategy_configs,
-                    config=OrchestratorConfig(),
+                    config=OrchestratorConfig(
+                        watchlist_repository=_get_watchlist_repo(),
+                    ),
                 )
     return _orchestrator
 
@@ -663,12 +796,14 @@ async def strategies_overview(request: Request) -> JSONResponse:
                     "total_pnl_pct": round(metrics.total_pnl_pct, 2),
                     "days_in_stage": metrics.days_in_stage,
                 }
-            result.append({
-                "strategy_id": strategy_id,
-                "stage": state.stage,
-                "stage_entered_at": state.stage_entered_at.isoformat(),
-                "metrics": metrics_data,
-            })
+            result.append(
+                {
+                    "strategy_id": strategy_id,
+                    "stage": state.stage,
+                    "stage_entered_at": state.stage_entered_at.isoformat(),
+                    "metrics": metrics_data,
+                }
+            )
         return JSONResponse(content={"strategies": result})
     except Exception as e:
         return JSONResponse(
@@ -970,6 +1105,9 @@ routes = [
     Route("/api/loop/status", loop_status),
     Route("/api/loop/iterate", loop_iterate, methods=["POST"]),
     Route("/api/orchestrator/iterate", strategy_orchestrator_iterate, methods=["POST"]),
+    Route("/api/watchlist", watchlist_api),
+    Route("/api/watchlist/{symbol}", watchlist_api, methods=["DELETE", "PATCH"]),
+    Route("/api/watchlist/bulk", watchlist_api, methods=["POST"]),
     Route("/metrics", metrics),
 ]
 
