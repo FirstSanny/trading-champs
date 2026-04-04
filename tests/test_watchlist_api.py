@@ -14,9 +14,19 @@ class TestWatchlistAPI:
     """Tests for /api/watchlist endpoints."""
 
     def _make_client(self, mock_repo: MagicMock):
-        with patch("api.index._get_watchlist_repo", return_value=mock_repo):
-            from api.index import app
-            return TestClient(app)
+        # The watchlist_api closure captures _get_watchlist_repo at import time.
+        # Patch both: _watchlist_repo to the mock AND _get_watchlist_repo to
+        # return the mock directly (bypassing the _watchlist_repo is None check).
+        import api.index
+
+        def patched_getter():
+            return mock_repo
+
+        with patch.object(api.index, "_get_watchlist_repo", patched_getter):
+            with patch.object(api.index, "_watchlist_repo", mock_repo):
+                from api.index import app
+
+                return TestClient(app)
 
     def _auth_headers(self):
         return {"Authorization": "Bearer test-secret-key"}
