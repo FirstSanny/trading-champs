@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import threading
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -517,6 +518,7 @@ async def strategies_api(request: Request) -> JSONResponse:
 
 # Orchestrator singleton (lazily initialized)
 _orchestrator: "StrategyOrchestrator | None" = None  # type: ignore[name-defined]
+_orchestrator_lock = threading.Lock()
 
 
 def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
@@ -525,46 +527,49 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
     STRATEGY_REGISTRY (signals/strategies/__init__.py) is the single source of truth
     for available strategies. Each strategy starts at dry_run stage and is persisted
     across serverless restarts via SQLite.
+    Thread-safe: uses double-checked locking to handle concurrent serverless requests.
     """
     global _orchestrator
     if _orchestrator is None:
-        from trading_champs.core.orchestrator import (
-            OrchestratorConfig,
-            StrategyLoopConfig,
-            StrategyOrchestrator,
-        )
-        from trading_champs.signals.strategies import (
-            STRATEGY_REGISTRY,
-            create_orchestrator_configs,
-        )
+        with _orchestrator_lock:
+            if _orchestrator is None:  # Re-check after acquiring lock
+                from trading_champs.core.orchestrator import (
+                    OrchestratorConfig,
+                    StrategyLoopConfig,
+                    StrategyOrchestrator,
+                )
+                from trading_champs.signals.strategies import (
+                    STRATEGY_REGISTRY,
+                    create_orchestrator_configs,
+                )
 
-        strategy_ids = list(STRATEGY_REGISTRY.keys())
+                strategy_ids = list(STRATEGY_REGISTRY.keys())
 
-        # Per-strategy symbols: round-robin assign ORCHESTRATOR_SYMBOLS across registry keys
-        symbols_raw = os.environ.get("ORCHESTRATOR_SYMBOLS", "BTC/USDT")
-        symbols_list = [s.strip() for s in symbols_raw.split(",") if s.strip()]
-        per_symbol = [symbols_list[i % len(symbols_list)] for i in range(len(strategy_ids))]
+                # Per-strategy symbols: round-robin assign ORCHESTRATOR_SYMBOLS across registry keys
+                symbols_raw = os.environ.get("ORCHESTRATOR_SYMBOLS", "BTC/USDT")
+                symbols_list = [s.strip() for s in symbols_raw.split(",") if s.strip()]
+                per_symbol = [symbols_list[i % len(symbols_list)] for i in range(len(strategy_ids))]
 
-        # Per-strategy overrides (list form for per-key values)
-        per_strategy_defaults: list[dict] = [
-            {
-                "symbols": [per_symbol[i]],
-                "timeframe": os.environ.get("ORCHESTRATOR_TIMEFRAME", "4h"),
-                "data_connector": os.environ.get("ORCHESTRATOR_DATA_CONNECTOR", "alpaca_market"),
-                "exec_connector": os.environ.get("ORCHESTRATOR_EXEC_CONNECTOR", "alpaca"),
-            }
-            for i in range(len(strategy_ids))
-        ]
+                # Per-strategy overrides (list form for per-key values)
+                per_strategy_defaults: list[dict] = [
+                    {
+                        "symbols": [per_symbol[i]],
+                        "timeframe": os.environ.get("ORCHESTRATOR_TIMEFRAME", "4h"),
+                        "data_connector": os.environ.get("ORCHESTRATOR_DATA_CONNECTOR", "alpaca_market"),
+                        "exec_connector": os.environ.get("ORCHESTRATOR_EXEC_CONNECTOR", "alpaca"),
+                    }
+                    for i in range(len(strategy_ids))
+                ]
 
-        strategy_configs = create_orchestrator_configs(
-            StrategyLoopConfig,  # type: ignore[name-defined]
-            defaults=per_strategy_defaults,
-        )
+                strategy_configs = create_orchestrator_configs(
+                    StrategyLoopConfig,  # type: ignore[name-defined]
+                    defaults=per_strategy_defaults,
+                )
 
-        _orchestrator = StrategyOrchestrator(
-            strategies=strategy_configs,
-            config=OrchestratorConfig(),
-        )
+                _orchestrator = StrategyOrchestrator(
+                    strategies=strategy_configs,
+                    config=OrchestratorConfig(),
+                )
     return _orchestrator
 
 
@@ -686,7 +691,7 @@ async def strategy_archive(request: Request) -> JSONResponse:
     content_type = request.headers.get("content-type", "")
     data = parse_post_body(body_str, content_type)
 
-    override_reason = data.get("reason", "manual_archive")
+    override_reason = data.get("override_reason", "manual_archive")
 
     orchestrator = get_orchestrator()
     try:
