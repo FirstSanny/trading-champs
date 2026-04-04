@@ -36,7 +36,7 @@ lint:
   image: python:3.10
   before_script:
     - pip install --upgrade pip
-    - pip install --no-cache-dir black==26.3.1 isort==5.12.0 flake8==6.1.0
+    - pip install --no-cache-dir black==26.3.1 isort==5.12.0 flake8==6.1.0 pyflakes==3.1.0
   script:
     - black --check src/ tests/
     - isort --check-only src/ tests/

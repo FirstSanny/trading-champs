@@ -284,7 +284,9 @@ class LoopStateStore:
             self._init_db()
             self._db_initialized = True
         except Exception as e:
-            logger.warning(f"LoopStateStore: SQLite unavailable ({e}) — running without persistence")
+            logger.warning(
+                f"LoopStateStore: SQLite unavailable ({e}) — running without persistence"
+            )
             self._db_initialized = False
 
     def _init_db(self) -> None:
@@ -295,7 +297,8 @@ class LoopStateStore:
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS loop_state (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 running INTEGER DEFAULT 0,
@@ -308,7 +311,8 @@ class LoopStateStore:
                 last_error TEXT,
                 iterations INTEGER DEFAULT 0
             )
-        """)
+        """
+        )
         # Ensure exactly one row exists
         cursor.execute("INSERT OR IGNORE INTO loop_state (id) VALUES (1)")
         conn.commit()
@@ -324,12 +328,14 @@ class LoopStateStore:
         try:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT running, last_run, last_symbol, last_signal, last_action,
                        consecutive_buy_signals, consecutive_sell_signals,
                        last_error, iterations
                 FROM loop_state WHERE id = 1
-            """)
+            """
+            )
             row = cursor.fetchone()
             conn.close()
 
