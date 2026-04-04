@@ -283,8 +283,8 @@ class LoopStateStore:
         try:
             self._init_db()
             self._db_initialized = True
-        except Exception:
-            # In serverless environments, SQLite may fail - use in-memory fallback
+        except Exception as e:
+            logger.warning(f"LoopStateStore: SQLite unavailable ({e}) — running without persistence")
             self._db_initialized = False
 
     def _init_db(self) -> None:

@@ -302,7 +302,13 @@ class StrategyStateStore:
     def __init__(self, db_path: str = ".loop_state.db"):
         self._db_path = db_path
         self._lock = threading.Lock()
-        self._init_db()
+        self._db_initialized = False
+        try:
+            self._init_db()
+            self._db_initialized = True
+        except Exception as e:
+            logger.warning(f"StrategyStateStore[{db_path}]: SQLite unavailable ({e}) — running without persistence")
+            self._db_initialized = False
 
     def _init_db(self) -> None:
         with self._lock:
@@ -321,6 +327,13 @@ class StrategyStateStore:
 
     def load(self, strategy_id: str) -> StrategyState:
         """Load state for a strategy, returning defaults if not found."""
+        if not self._db_initialized:
+            return StrategyState(
+                strategy_id=strategy_id,
+                stage="dry_run",
+                stage_entered_at=datetime.utcnow(),
+                current_metrics={},
+            )
         with self._lock:
             conn = sqlite3.connect(self._db_path)
             conn.row_factory = sqlite3.Row
@@ -349,6 +362,8 @@ class StrategyStateStore:
 
     def save(self, state: StrategyState) -> None:
         """Persist strategy state to SQLite."""
+        if not self._db_initialized:
+            return
         with self._lock:
             conn = sqlite3.connect(self._db_path)
             conn.execute(

@@ -623,29 +623,35 @@ async def strategies_overview(request: Request) -> JSONResponse:
     """Return per-strategy stage overview for the dashboard."""
     if (err_resp := auth_guard(request)) is not None:
         return err_resp
-    orchestrator = get_orchestrator()
-    states = orchestrator.get_all_strategy_states()
-    result = []
-    for strategy_id, state in states.items():
-        # Compute metrics from the strategy loop's tracker
-        strategy_loop = orchestrator._strategy_loops.get(strategy_id)
-        metrics_data = {}
-        if strategy_loop:
-            metrics = strategy_loop.get_metrics(state.stage_entered_at)
-            metrics_data = {
-                "total_trades": metrics.total_trades,
-                "win_rate": round(metrics.win_rate * 100, 1) if metrics.win_rate else 0,
-                "current_drawdown_pct": round(metrics.current_drawdown_pct, 2),
-                "total_pnl_pct": round(metrics.total_pnl_pct, 2),
-                "days_in_stage": metrics.days_in_stage,
-            }
-        result.append({
-            "strategy_id": strategy_id,
-            "stage": state.stage,
-            "stage_entered_at": state.stage_entered_at.isoformat(),
-            "metrics": metrics_data,
-        })
-    return JSONResponse(content={"strategies": result})
+    try:
+        orchestrator = get_orchestrator()
+        states = orchestrator.get_all_strategy_states()
+        result = []
+        for strategy_id, state in states.items():
+            # Compute metrics from the strategy loop's tracker
+            strategy_loop = orchestrator._strategy_loops.get(strategy_id)
+            metrics_data = {}
+            if strategy_loop:
+                metrics = strategy_loop.get_metrics(state.stage_entered_at)
+                metrics_data = {
+                    "total_trades": metrics.total_trades,
+                    "win_rate": round(metrics.win_rate * 100, 1) if metrics.win_rate else 0,
+                    "current_drawdown_pct": round(metrics.current_drawdown_pct, 2),
+                    "total_pnl_pct": round(metrics.total_pnl_pct, 2),
+                    "days_in_stage": metrics.days_in_stage,
+                }
+            result.append({
+                "strategy_id": strategy_id,
+                "stage": state.stage,
+                "stage_entered_at": state.stage_entered_at.isoformat(),
+                "metrics": metrics_data,
+            })
+        return JSONResponse(content={"strategies": result})
+    except Exception as e:
+        return JSONResponse(
+            content={"strategies": [], "error": str(e)},
+            status_code=500,
+        )
 
 
 async def strategy_orchestrator_iterate(request: Request) -> JSONResponse:

@@ -1,12 +1,15 @@
 """Append-only stage transition history for per-strategy pipelines."""
 
 import json
+import logging
 import sqlite3
 import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -40,7 +43,13 @@ class StageHistory:
         if db_path is None:
             db_path = str(Path(__file__).parent.parent.parent / ".loop_state.db")
         self._db_path = db_path
-        self._init_db()
+        self._db_initialized = False
+        try:
+            self._init_db()
+            self._db_initialized = True
+        except Exception as e:
+            logger.warning(f"StageHistory[{db_path}]: SQLite unavailable ({e}) — running without persistence")
+            self._db_initialized = False
 
     def _get_conn(self) -> sqlite3.Connection:
         """Get thread-local database connection."""
@@ -77,11 +86,9 @@ class StageHistory:
         conn.commit()
 
     def append(self, transition: StageTransition) -> None:
-        """Append a stage transition to the log.
-
-        Args:
-            transition: The stage transition to log.
-        """
+        """Append a stage transition to the log."""
+        if not self._db_initialized:
+            return
         conn = self._get_conn()
         conn.execute(
             """
@@ -104,15 +111,9 @@ class StageHistory:
         conn.commit()
 
     def get_history(self, strategy_id: str, limit: int = 50) -> list[StageTransition]:
-        """Get stage transition history for a strategy.
-
-        Args:
-            strategy_id: The strategy identifier.
-            limit: Maximum number of transitions to return.
-
-        Returns:
-            List of StageTransition objects, oldest first.
-        """
+        """Get stage transition history for a strategy."""
+        if not self._db_initialized:
+            return []
         conn = self._get_conn()
         rows = conn.execute(
             """
@@ -147,6 +148,8 @@ class StageHistory:
         Returns:
             The current stage name, or None if no history.
         """
+        if not self._db_initialized:
+            return None
         conn = self._get_conn()
         row = conn.execute(
             """
