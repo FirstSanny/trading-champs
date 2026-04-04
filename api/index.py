@@ -1105,7 +1105,7 @@ routes = [
     Route("/api/loop/status", loop_status),
     Route("/api/loop/iterate", loop_iterate, methods=["POST"]),
     Route("/api/orchestrator/iterate", strategy_orchestrator_iterate, methods=["POST"]),
-    Route("/api/watchlist", watchlist_api),
+    Route("/api/watchlist", watchlist_api, methods=["GET", "POST"]),
     Route("/api/watchlist/{symbol}", watchlist_api, methods=["DELETE", "PATCH"]),
     Route("/api/watchlist/bulk", watchlist_api, methods=["POST"]),
     Route("/metrics", metrics),
