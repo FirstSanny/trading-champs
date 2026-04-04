@@ -520,7 +520,12 @@ _orchestrator: "StrategyOrchestrator | None" = None  # type: ignore[name-defined
 
 
 def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
-    """Get or create the strategy orchestrator singleton."""
+    """Get or create the strategy orchestrator singleton.
+
+    STRATEGY_REGISTRY (signals/strategies/__init__.py) is the single source of truth
+    for available strategies. Each strategy starts at dry_run stage and is persisted
+    across serverless restarts via SQLite.
+    """
     global _orchestrator
     if _orchestrator is None:
         from trading_champs.core.orchestrator import (
@@ -528,29 +533,33 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
             StrategyLoopConfig,
             StrategyOrchestrator,
         )
+        from trading_champs.signals.strategies import (
+            STRATEGY_REGISTRY,
+            create_orchestrator_configs,
+        )
 
-        strategies_raw = os.environ.get("ORCHESTRATOR_STRATEGIES", "rsi,macd,bollinger,ma_crossover")
-        strategy_ids = [s.strip() for s in strategies_raw.split(",") if s.strip()]
+        strategy_ids = list(STRATEGY_REGISTRY.keys())
 
-        # Per-strategy equity symbols (one per strategy)
-        symbols_raw = os.environ.get("ORCHESTRATOR_SYMBOLS", "AAPL,MSFT,SPY,TSLA")
+        # Per-strategy symbols: round-robin assign ORCHESTRATOR_SYMBOLS across registry keys
+        symbols_raw = os.environ.get("ORCHESTRATOR_SYMBOLS", "BTC/USDT")
         symbols_list = [s.strip() for s in symbols_raw.split(",") if s.strip()]
+        per_symbol = [symbols_list[i % len(symbols_list)] for i in range(len(strategy_ids))]
 
-        strategy_configs: list[StrategyLoopConfig] = []
-        for i, sid in enumerate(strategy_ids):
-            symbol = symbols_list[i] if i < len(symbols_list) else symbols_list[0]
-            strategy_configs.append(
-                StrategyLoopConfig(
-                    strategy_id=sid,
-                    strategy_name=sid.upper(),
-                    symbols=[symbol],
-                    strategy=sid if sid in ("rsi", "macd", "bollinger", "bollinger_rsi", "ma_crossover") else "ma_crossover",
-                    mode="dry_run",
-                    data_connector="alpaca_market",
-                    exec_connector="alpaca",
-                    timeframe="4h",
-                )
-            )
+        # Per-strategy overrides (list form for per-key values)
+        per_strategy_defaults: list[dict] = [
+            {
+                "symbols": [per_symbol[i]],
+                "timeframe": os.environ.get("ORCHESTRATOR_TIMEFRAME", "4h"),
+                "data_connector": os.environ.get("ORCHESTRATOR_DATA_CONNECTOR", "alpaca_market"),
+                "exec_connector": os.environ.get("ORCHESTRATOR_EXEC_CONNECTOR", "alpaca"),
+            }
+            for i in range(len(strategy_ids))
+        ]
+
+        strategy_configs = create_orchestrator_configs(
+            StrategyLoopConfig,  # type: ignore[name-defined]
+            defaults=per_strategy_defaults,
+        )
 
         _orchestrator = StrategyOrchestrator(
             strategies=strategy_configs,
@@ -620,14 +629,23 @@ async def strategy_stage_patch(request: Request) -> JSONResponse:
 
 
 async def strategies_overview(request: Request) -> JSONResponse:
-    """Return per-strategy stage overview for the dashboard."""
+    """Return per-strategy stage overview for the dashboard.
+
+    Query params:
+        - include_archived: if 'true', includes archived strategies
+    """
     if (err_resp := auth_guard(request)) is not None:
         return err_resp
     try:
+        query_params = request.query_params
+        include_archived = query_params.get("include_archived", ["false"])[0].lower() == "true"
+
         orchestrator = get_orchestrator()
         states = orchestrator.get_all_strategy_states()
         result = []
         for strategy_id, state in states.items():
+            if state.stage == "archived" and not include_archived:
+                continue
             # Compute metrics from the strategy loop's tracker
             strategy_loop = orchestrator._strategy_loops.get(strategy_id)
             metrics_data = {}
@@ -652,6 +670,41 @@ async def strategies_overview(request: Request) -> JSONResponse:
             content={"strategies": [], "error": str(e)},
             status_code=500,
         )
+
+
+async def strategy_archive(request: Request) -> JSONResponse:
+    """Archive a strategy (manual or automated)."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
+    path_parts = request.url.path.split("/")
+    strategy_id = path_parts[3] if len(path_parts) >= 4 else None
+    if not strategy_id:
+        return JSONResponse(content={"error": "Strategy ID required"}, status_code=400)
+
+    body = await request.body()
+    body_str = body.decode() if body else ""
+    content_type = request.headers.get("content-type", "")
+    data = parse_post_body(body_str, content_type)
+
+    override_reason = data.get("reason", "manual_archive")
+
+    orchestrator = get_orchestrator()
+    try:
+        new_state = orchestrator.force_archive(
+            strategy_id=strategy_id,
+            reason=override_reason,
+            actor="manual",
+        )
+        return JSONResponse(
+            content={
+                "status": "success",
+                "strategy_id": strategy_id,
+                "new_stage": new_state.stage,
+                "stage_entered_at": new_state.stage_entered_at.isoformat(),
+            }
+        )
+    except ValueError as e:
+        return JSONResponse(content={"error": str(e)}, status_code=400)
 
 
 async def strategy_orchestrator_iterate(request: Request) -> JSONResponse:
@@ -902,6 +955,7 @@ routes = [
     Route("/api/strategies/overview", strategies_overview),
     Route("/api/strategies/{strategy_id}/stage_history", strategy_stage_history),
     Route("/api/strategies/{strategy_id}/stage", strategy_stage_patch, methods=["PATCH"]),
+    Route("/api/strategies/{strategy_id}/archive", strategy_archive, methods=["PATCH"]),
     Route("/api/trades", trades_api),
     Route("/api/trades/{trade_id}/close", close_trade_api, methods=["POST"]),
     Route("/api/account", account_api),

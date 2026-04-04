@@ -4,8 +4,7 @@ from dataclasses import dataclass, field
 from typing import Sequence
 
 from trading_champs.signals.backtester import BacktestResult
-from trading_champs.signals.detectors.crossover import CrossoverDetector, SignalType
-from trading_champs.signals.detectors.threshold import ThresholdDetector
+from trading_champs.signals.detectors.crossover import SignalType
 from trading_champs.signals.indicators.momentum import MACD, RSI
 from trading_champs.signals.indicators.moving_averages import EMA, SMA
 from trading_champs.signals.indicators.volatility import BollingerBands
@@ -69,17 +68,18 @@ class SignalEngine:
         self.prices = list(prices)
         self.config = config or SignalConfig()
 
+    def _strategy(self, cls):
+        """Instantiate a strategy class with self.prices and self.config."""
+        return cls(self.prices, self.config)
+
     def generate_ma_crossover_signals(self) -> list[SignalType]:
         """Generate signals based on moving average crossovers.
 
         Returns:
             List of signal types.
         """
-        fast_ma = SMA(self.prices, self.config.fast_ma_period)
-        slow_ma = SMA(self.prices, self.config.slow_ma_period)
-
-        detector = CrossoverDetector(fast_ma, slow_ma)
-        return detector.detect()
+        from trading_champs.signals.strategies.ma_crossover import MACrossoverStrategy
+        return self._strategy(MACrossoverStrategy).detect()
 
     def generate_rsi_signals(self) -> list[SignalType]:
         """Generate signals based on RSI threshold crossings.
@@ -87,13 +87,8 @@ class SignalEngine:
         Returns:
             List of signal types.
         """
-        rsi_values = RSI(self.prices, self.config.rsi_period)
-        detector = ThresholdDetector(
-            rsi_values,
-            upper_threshold=self.config.rsi_overbought,
-            lower_threshold=self.config.rsi_oversold,
-        )
-        return detector.detect()
+        from trading_champs.signals.strategies.rsi import RSIStrategy
+        return self._strategy(RSIStrategy).detect()
 
     def generate_macd_signals(self) -> list[SignalType]:
         """Generate signals based on MACD crossovers.
@@ -101,15 +96,85 @@ class SignalEngine:
         Returns:
             List of signal types.
         """
-        macd_data = MACD(
-            self.prices,
-            fast_period=self.config.macd_fast,
-            slow_period=self.config.macd_slow,
-            signal_period=self.config.macd_signal,
-        )
+        from trading_champs.signals.strategies.macd import MACDStrategy
+        return self._strategy(MACDStrategy).detect()
 
-        detector = CrossoverDetector(macd_data["macd"], macd_data["signal"])
-        return detector.detect()
+    def generate_ma_crossover_signals_with_preset(self, preset: MAPeriodPreset) -> list[SignalType]:
+        """Generate MA crossover signals using a specific period preset.
+
+        Args:
+            preset: MA period preset to use.
+
+        Returns:
+            List of signal types.
+        """
+        from trading_champs.signals.strategies.ma_crossover import MACrossoverPresetStrategy
+        return MACrossoverPresetStrategy(self.prices, preset, self.config).detect()
+
+    def generate_macd_signals_with_trend_filter(self) -> list[SignalType]:
+        """Generate MACD signals filtered by 200-day MA trend.
+
+        Only takes BUY when price is above 200-day MA, and SELL when below.
+
+        Returns:
+            List of signal types.
+        """
+        from trading_champs.signals.strategies.macd import MACDTrendFilterStrategy
+        return self._strategy(MACDTrendFilterStrategy).detect()
+
+    def _calculate_dynamic_rsi_thresholds(self) -> tuple[float, float]:
+        """Calculate dynamic RSI thresholds based on historical percentiles.
+
+        Returns:
+            Tuple of (lower_threshold, upper_threshold).
+        """
+        rsi_values = RSI(self.prices, self.config.rsi_period)
+        valid_rsi = [v for v in rsi_values if v is not None]
+
+        if len(valid_rsi) < 10:
+            # Not enough data, use defaults
+            return self.config.rsi_oversold, self.config.rsi_overbought
+
+        lower_percentile = self.config.rsi_percentile_low
+        upper_percentile = self.config.rsi_percentile_high
+
+        lower_threshold = float(sorted(valid_rsi)[int(len(valid_rsi) * lower_percentile / 100)])
+        upper_threshold = float(sorted(valid_rsi)[int(len(valid_rsi) * upper_percentile / 100)])
+
+        return lower_threshold, upper_threshold
+
+    def generate_rsi_signals_with_dynamic_threshold(self) -> list[SignalType]:
+        """Generate RSI signals using dynamic percentile-based thresholds.
+
+        Returns:
+            List of signal types.
+        """
+        from trading_champs.signals.strategies.rsi import RSIDynamicThresholdStrategy
+        return self._strategy(RSIDynamicThresholdStrategy).detect()
+
+    def generate_bollinger_signals(self) -> list[SignalType]:
+        """Generate signals based on Bollinger Bands mean reversion.
+
+        Buy when price closes below lower band (oversold).
+        Sell when price closes above upper band (overbought).
+
+        Returns:
+            List of signal types.
+        """
+        from trading_champs.signals.strategies.bollinger import BollingerStrategy
+        return self._strategy(BollingerStrategy).detect()
+
+    def generate_bollinger_signals_with_rsi(self) -> list[SignalType]:
+        """Generate Bollinger Bands signals with RSI confirmation.
+
+        Buy only when price touches lower band AND RSI is oversold.
+        Sell only when price touches upper band AND RSI is overbought.
+
+        Returns:
+            List of signal types.
+        """
+        from trading_champs.signals.strategies.bollinger import BollingerRSIStrategy
+        return self._strategy(BollingerRSIStrategy).detect()
 
     def get_indicator_values(self) -> dict[str, list[float | None]]:
         """Get all calculated indicator values.
@@ -141,113 +206,6 @@ class SignalEngine:
             "bb_lower": bb["lower"],
         }
 
-    def generate_ma_crossover_signals_with_preset(self, preset: MAPeriodPreset) -> list[SignalType]:
-        """Generate MA crossover signals using a specific period preset.
-
-        Args:
-            preset: MA period preset to use.
-
-        Returns:
-            List of signal types.
-        """
-        fast_ma = SMA(self.prices, preset.fast_period)
-        slow_ma = SMA(self.prices, preset.slow_period)
-
-        detector = CrossoverDetector(fast_ma, slow_ma)
-        return detector.detect()
-
-    def generate_macd_signals_with_trend_filter(self) -> list[SignalType]:
-        """Generate MACD signals filtered by 200-day MA trend.
-
-        Only takes BUY when price is above 200-day MA, and SELL when below.
-
-        Returns:
-            List of signal types.
-        """
-        macd_data = MACD(
-            self.prices,
-            fast_period=self.config.macd_fast,
-            slow_period=self.config.macd_slow,
-            signal_period=self.config.macd_signal,
-        )
-
-        # Get trend MA (200-day by default)
-        trend_ma = EMA(self.prices, self.config.trend_ma_period)
-
-        detector = CrossoverDetector(macd_data["macd"], macd_data["signal"])
-        raw_signals = detector.detect()
-
-        # Apply trend filter
-        filtered_signals: list[SignalType] = []
-        for i, signal in enumerate(raw_signals):
-            if signal == SignalType.NEUTRAL:
-                filtered_signals.append(SignalType.NEUTRAL)
-                continue
-
-            price = self.prices[i]
-            trend_value = trend_ma[i]
-
-            if price is None or trend_value is None:
-                filtered_signals.append(SignalType.NEUTRAL)
-                continue
-
-            if signal == SignalType.BUY:
-                # Only take BUY when price is above trend MA
-                if price > trend_value:
-                    filtered_signals.append(SignalType.BUY)
-                else:
-                    filtered_signals.append(SignalType.NEUTRAL)
-            elif signal == SignalType.SELL:
-                # Only take SELL when price is below trend MA
-                if price < trend_value:
-                    filtered_signals.append(SignalType.SELL)
-                else:
-                    filtered_signals.append(SignalType.NEUTRAL)
-            else:
-                filtered_signals.append(SignalType.NEUTRAL)
-
-        return filtered_signals
-
-    def _calculate_dynamic_rsi_thresholds(self) -> tuple[float, float]:
-        """Calculate dynamic RSI thresholds based on historical percentiles.
-
-        Returns:
-            Tuple of (lower_threshold, upper_threshold).
-        """
-        rsi_values = RSI(self.prices, self.config.rsi_period)
-        valid_rsi = [v for v in rsi_values if v is not None]
-
-        if len(valid_rsi) < 10:
-            # Not enough data, use defaults
-            return self.config.rsi_oversold, self.config.rsi_overbought
-
-        lower_percentile = self.config.rsi_percentile_low
-        upper_percentile = self.config.rsi_percentile_high
-
-        lower_threshold = float(sorted(valid_rsi)[int(len(valid_rsi) * lower_percentile / 100)])
-        upper_threshold = float(sorted(valid_rsi)[int(len(valid_rsi) * upper_percentile / 100)])
-
-        return lower_threshold, upper_threshold
-
-    def generate_rsi_signals_with_dynamic_threshold(self) -> list[SignalType]:
-        """Generate RSI signals using dynamic percentile-based thresholds.
-
-        Thresholds are calculated from historical RSI percentiles rather
-        than fixed values.
-
-        Returns:
-            List of signal types.
-        """
-        rsi_values = RSI(self.prices, self.config.rsi_period)
-        lower_threshold, upper_threshold = self._calculate_dynamic_rsi_thresholds()
-
-        detector = ThresholdDetector(
-            rsi_values,
-            upper_threshold=upper_threshold,
-            lower_threshold=lower_threshold,
-        )
-        return detector.detect()
-
     def optimize_ma_presets(self) -> dict[str, BacktestResult]:
         """Run backtest across all MA presets and return results.
 
@@ -264,51 +222,3 @@ class SignalEngine:
             results[preset.name] = result
 
         return results
-
-    def generate_bollinger_signals(self) -> list[SignalType]:
-        """Generate signals based on Bollinger Bands mean reversion.
-
-        Buy when price closes below lower band (oversold).
-        Sell when price closes above upper band (overbought).
-
-        Returns:
-            List of signal types.
-        """
-        from trading_champs.signals.detectors.bollinger import BollingerBandsDetector
-
-        rsi_values = None
-        if self.config.use_dynamic_rsi:
-            rsi_values = RSI(self.prices, self.config.rsi_period)
-
-        detector = BollingerBandsDetector(
-            self.prices,
-            period=self.config.fast_ma_period,  # Use fast_ma_period for BB period
-            num_std=2.0,
-            use_rsi_filter=self.config.use_trend_filter,  # Use trend_filter as RSI filter flag
-            rsi_values=rsi_values,
-            rsi_oversold=self.config.rsi_oversold,
-        )
-        return detector.detect()
-
-    def generate_bollinger_signals_with_rsi(self) -> list[SignalType]:
-        """Generate Bollinger Bands signals with RSI confirmation.
-
-        Buy only when price touches lower band AND RSI is oversold.
-        Sell only when price touches upper band AND RSI is overbought.
-
-        Returns:
-            List of signal types.
-        """
-        from trading_champs.signals.detectors.bollinger import BollingerBandsDetector
-
-        rsi_values = RSI(self.prices, self.config.rsi_period)
-
-        detector = BollingerBandsDetector(
-            self.prices,
-            period=self.config.fast_ma_period,
-            num_std=2.0,
-            use_rsi_filter=True,
-            rsi_values=rsi_values,
-            rsi_oversold=self.config.rsi_oversold,
-        )
-        return detector.detect()

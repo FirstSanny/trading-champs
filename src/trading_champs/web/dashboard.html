@@ -114,6 +114,12 @@
         .chip-value.positive { color: var(--color-positive); }
         .chip-value.negative { color: var(--color-negative); }
 
+        /* Toggle button for archived strategies */
+        .toggle-btn { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 600; cursor: pointer; color: var(--color-text-tertiary); border: 1px solid var(--color-border); background: transparent; user-select: none; }
+        .toggle-btn:hover { border-color: var(--color-text-secondary); color: var(--color-text-secondary); }
+        .toggle-btn input[type="checkbox"] { display: none; }
+        .toggle-btn:has(input:checked) { color: var(--color-text-secondary); border-color: var(--color-text-tertiary); background: rgba(107,122,143,0.08); }
+
         /* SECTION HEADERS */
         .section-header { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4) var(--space-4) var(--space-3); cursor: pointer; user-select: none; }
         .section-header:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
@@ -133,6 +139,8 @@
         .stage-badge.paper { background: rgba(29,155,240,0.15); color: #1d9bf0; border: 1px solid rgba(29,155,240,0.4); }
         .stage-badge.live_stage_1 { background: rgba(0,212,170,0.12); color: var(--color-accent); border: 1px solid rgba(0,212,170,0.4); }
         .stage-badge.live_stage_2 { background: rgba(0,230,118,0.12); color: var(--color-positive); border: 1px solid rgba(0,230,118,0.4); }
+        .stage-badge.archived { background: rgba(107,122,143,0.12); color: var(--color-text-tertiary); border: 1px solid var(--color-border); opacity: 0.6; }
+        .strategy-card.archived { opacity: 0.5; }
         .strategy-card-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-1) var(--space-3); }
         .strategy-metric { display: flex; flex-direction: column; gap: 1px; }
         .strategy-metric-label { font-size: 9px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-secondary); }
@@ -269,6 +277,10 @@
         <div class="section-header" role="button" tabindex="0" id="strategies-header" onclick="toggleSection('strategies')">
             <span class="section-title">Strategies</span>
             <span class="section-count" id="strategies-count">0</span>
+            <label class="toggle-btn" id="archived-toggle" title="Show archived strategies" onclick="event.stopPropagation(); toggleArchived()">
+                <input type="checkbox" id="show-archived-cb">
+                <span>Show Archived</span>
+            </label>
             <span class="section-chevron open" id="strategies-chevron">▼</span>
         </div>
         <div class="collapsible-content open" id="strategies-content">
@@ -342,6 +354,7 @@
         var API_BASE = '/api';
         var equityChart, dailyChart, strategyChart;
         var currentMode = 'paper';
+        var showArchived = false;
         var autoRefresh = true;
         var pollInterval = null;
         var allStrategies = {};
@@ -352,6 +365,13 @@
             if (mode === currentMode) return;
             currentMode = mode;
             updateModeUI();
+            loadDashboard();
+        }
+
+        /* ---- ARCHIVED TOGGLE ---- */
+        function toggleArchived() {
+            showArchived = !showArchived;
+            document.getElementById('show-archived-cb').checked = showArchived;
             loadDashboard();
         }
 
@@ -668,7 +688,8 @@
                 var ddCls = ddVal > 5 ? 'negative' : '';
                 var wrVal = m.win_rate || 0;
                 var wrCls = wrVal >= 55 ? 'positive' : (wrVal < 40 ? 'negative' : '');
-                return '<div class="strategy-card">' +
+                var archivedCls = stageClass === 'archived' ? ' archived' : '';
+                return '<div class="strategy-card' + archivedCls + '">' +
                     '<div class="strategy-card-header">' +
                         '<span class="strategy-card-name">' + String(s.strategy_id).toUpperCase() + '</span>' +
                         '<span class="stage-badge ' + stageClass + '">' + stageLabel + '</span>' +
@@ -707,7 +728,7 @@
                 fetchJSON(API_BASE + '/dashboard?mode=' + currentMode),
                 fetchJSON(API_BASE + '/equity-curve?mode=' + currentMode),
                 fetchJSON(API_BASE + '/strategy-curves?mode=' + currentMode),
-                fetchJSON(API_BASE + '/strategies/overview')
+                fetchJSON(API_BASE + '/strategies/overview' + (showArchived ? '?include_archived=true' : ''))
             ])
             .then(function(results) {
                 var dashData = results[0];

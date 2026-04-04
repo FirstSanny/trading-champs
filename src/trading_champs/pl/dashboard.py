@@ -235,12 +235,19 @@ class DashboardProvider:
         )
 
     def get_strategies(self) -> list[str]:
-        """Get all unique strategy names from trades."""
-        strategies = set()
+        """Get all strategy names.
+
+        Returns strategies from STRATEGY_REGISTRY (single source of truth),
+        augmented with any strategy names that appear in trades but are not
+        in the registry (e.g. legacy strategies).
+        """
+        from trading_champs.signals.strategies import STRATEGY_REGISTRY
+
+        strategies = set(STRATEGY_REGISTRY.keys())
         for trade in self.tracker.trade_log.trades:
             if trade.strategy:
                 strategies.add(trade.strategy)
-        return sorted(list(strategies)) if strategies else ["default"]
+        return sorted(strategies)
 
     def get_strategy_equity_curves(
         self, days: int = 30, mode: str = "paper"
