@@ -1,10 +1,7 @@
 """RSI-based strategies."""
 
-from typing import Sequence
-
 from trading_champs.signals.detectors.crossover import SignalType
 from trading_champs.signals.detectors.threshold import ThresholdDetector
-from trading_champs.signals.engine import SignalConfig
 from trading_champs.signals.indicators.momentum import RSI
 
 from .base import AbstractStrategy

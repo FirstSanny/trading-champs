@@ -1,24 +1,14 @@
 """Strategy registry and exports."""
 
 from trading_champs.signals.strategies.base import AbstractStrategy
-from trading_champs.signals.strategies.protocol import Strategy
+from trading_champs.signals.strategies.bollinger import BollingerRSIStrategy, BollingerStrategy
 from trading_champs.signals.strategies.ma_crossover import (
     MACrossoverPresetStrategy,
     MACrossoverStrategy,
 )
-from trading_champs.signals.strategies.rsi import (
-    RSIDynamicThresholdStrategy,
-    RSIStrategy,
-)
-from trading_champs.signals.strategies.macd import (
-    MACDStrategy,
-    MACDTrendFilterStrategy,
-)
-from trading_champs.signals.strategies.bollinger import (
-    BollingerRSIStrategy,
-    BollingerStrategy,
-)
-
+from trading_champs.signals.strategies.macd import MACDStrategy, MACDTrendFilterStrategy
+from trading_champs.signals.strategies.protocol import Strategy
+from trading_champs.signals.strategies.rsi import RSIDynamicThresholdStrategy, RSIStrategy
 
 # Canonical string-based registry for SignalService.get_signals(str)
 STRATEGY_REGISTRY: dict[str, type[Strategy]] = {

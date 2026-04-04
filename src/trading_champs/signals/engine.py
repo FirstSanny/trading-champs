@@ -6,7 +6,7 @@ from typing import Sequence
 from trading_champs.signals.backtester import BacktestResult
 from trading_champs.signals.detectors.crossover import SignalType
 from trading_champs.signals.indicators.momentum import MACD, RSI
-from trading_champs.signals.indicators.moving_averages import EMA, SMA
+from trading_champs.signals.indicators.moving_averages import SMA
 from trading_champs.signals.indicators.volatility import BollingerBands
 
 
@@ -79,6 +79,7 @@ class SignalEngine:
             List of signal types.
         """
         from trading_champs.signals.strategies.ma_crossover import MACrossoverStrategy
+
         return self._strategy(MACrossoverStrategy).detect()
 
     def generate_rsi_signals(self) -> list[SignalType]:
@@ -88,6 +89,7 @@ class SignalEngine:
             List of signal types.
         """
         from trading_champs.signals.strategies.rsi import RSIStrategy
+
         return self._strategy(RSIStrategy).detect()
 
     def generate_macd_signals(self) -> list[SignalType]:
@@ -97,6 +99,7 @@ class SignalEngine:
             List of signal types.
         """
         from trading_champs.signals.strategies.macd import MACDStrategy
+
         return self._strategy(MACDStrategy).detect()
 
     def generate_ma_crossover_signals_with_preset(self, preset: MAPeriodPreset) -> list[SignalType]:
@@ -109,6 +112,7 @@ class SignalEngine:
             List of signal types.
         """
         from trading_champs.signals.strategies.ma_crossover import MACrossoverPresetStrategy
+
         return MACrossoverPresetStrategy(self.prices, preset, self.config).detect()
 
     def generate_macd_signals_with_trend_filter(self) -> list[SignalType]:
@@ -120,6 +124,7 @@ class SignalEngine:
             List of signal types.
         """
         from trading_champs.signals.strategies.macd import MACDTrendFilterStrategy
+
         return self._strategy(MACDTrendFilterStrategy).detect()
 
     def _calculate_dynamic_rsi_thresholds(self) -> tuple[float, float]:
@@ -150,6 +155,7 @@ class SignalEngine:
             List of signal types.
         """
         from trading_champs.signals.strategies.rsi import RSIDynamicThresholdStrategy
+
         return self._strategy(RSIDynamicThresholdStrategy).detect()
 
     def generate_bollinger_signals(self) -> list[SignalType]:
@@ -162,6 +168,7 @@ class SignalEngine:
             List of signal types.
         """
         from trading_champs.signals.strategies.bollinger import BollingerStrategy
+
         return self._strategy(BollingerStrategy).detect()
 
     def generate_bollinger_signals_with_rsi(self) -> list[SignalType]:
@@ -174,6 +181,7 @@ class SignalEngine:
             List of signal types.
         """
         from trading_champs.signals.strategies.bollinger import BollingerRSIStrategy
+
         return self._strategy(BollingerRSIStrategy).detect()
 
     def get_indicator_values(self) -> dict[str, list[float | None]]:
