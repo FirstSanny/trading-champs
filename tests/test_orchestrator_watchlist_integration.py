@@ -21,7 +21,9 @@ class TestOrchestratorWatchlistIntegration:
         mock_config.watchlist_repository = mock_repo
 
         with patch.object(StrategyOrchestrator, "_iterate_all_impl", return_value=None):
-            StrategyOrchestrator(config=mock_config)
+            orch = StrategyOrchestrator(config=mock_config)
+            # _refresh_symbols_from_watchlist runs inside _iterate_all_impl
+            orch.iterate_all()
 
         # Verify repo was queried during iterate_all (via _refresh_symbols_from_watchlist)
         mock_repo.get_enabled_symbols.assert_called()
