@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from typing import List, Optional
 
 import requests
 
