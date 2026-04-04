@@ -11,6 +11,7 @@ class StageConfig:
     Each strategy progresses through stages: dry_run -> paper -> live_stage_1 -> live_stage_2.
     A strategy must pass all gates to be promoted to the next stage.
     If drawdown exceeds max_drawdown_pct, the strategy is demoted.
+    Strategies can be archived when they fail repeatedly or stall in dry_run.
     """
 
     stage_name: str
@@ -21,6 +22,10 @@ class StageConfig:
     days_in_stage_min: int = 7
     capital_fraction: float = 0.0  # 0.0 = dry_run, 0.1 = paper, 0.3 = live stage 1
     demotes_to: str = "dry_run"  # stage to demote to on gate failure
+    # Archival triggers (only meaningful for dry_run stage)
+    consecutive_demote_limit: int = 0  # auto-archive after N consecutive demotions (0=disabled)
+    dry_run_archive_after_days: int = 0  # auto-archive if in dry_run > N days (0=disabled)
+    dry_run_archive_min_trades: int = 0  # requires this many trades to consider (0=disabled)
 
     def gates_met(
         self,
@@ -56,6 +61,10 @@ class StageConfig:
         return True
 
 
+# Stage progression order (archived is terminal, not in the list)
+STAGE_PROGRESSION: list[str] = ["dry_run", "paper", "live_stage_1", "live_stage_2"]
+
+
 # Default stage configurations
 DRY_RUN = StageConfig(
     stage_name="dry_run",
@@ -65,6 +74,9 @@ DRY_RUN = StageConfig(
     days_in_stage_min=5,  # 5 trading days (4H bars produce signals faster)
     capital_fraction=0.0,
     demotes_to="dry_run",
+    consecutive_demote_limit=3,  # archive after 3 consecutive demotions
+    dry_run_archive_after_days=30,  # archive if in dry_run > 30 days
+    dry_run_archive_min_trades=10,  # ...and fewer than 10 trades in that time
 )
 
 PAPER = StageConfig(
@@ -97,11 +109,26 @@ LIVE_STAGE_2 = StageConfig(
     demotes_to="live_stage_1",
 )
 
+ARCHIVED = StageConfig(
+    stage_name="archived",
+    min_trades=0,
+    min_win_rate=0.0,
+    max_drawdown_pct=100.0,
+    min_sharpe_ratio=None,
+    days_in_stage_min=0,
+    capital_fraction=0.0,
+    demotes_to="archived",
+    consecutive_demote_limit=0,
+    dry_run_archive_after_days=0,
+    dry_run_archive_min_trades=0,
+)
+
 STAGE_CONFIGS: dict[str, StageConfig] = {
     "dry_run": DRY_RUN,
     "paper": PAPER,
     "live_stage_1": LIVE_STAGE_1,
     "live_stage_2": LIVE_STAGE_2,
+    "archived": ARCHIVED,
 }
 
 
@@ -111,12 +138,18 @@ def get_stage_config(stage_name: str) -> StageConfig:
 
 
 def next_stage(current_stage: str) -> Optional[str]:
-    """Get the next stage after current_stage, or None if at final stage."""
-    progression = ["dry_run", "paper", "live_stage_1", "live_stage_2"]
+    """Get the next stage after current_stage, or None if at final stage or archived."""
+    if current_stage == "archived":
+        return None
     try:
-        idx = progression.index(current_stage)
-        if idx + 1 < len(progression):
-            return progression[idx + 1]
+        idx = STAGE_PROGRESSION.index(current_stage)
+        if idx + 1 < len(STAGE_PROGRESSION):
+            return STAGE_PROGRESSION[idx + 1]
         return None
     except ValueError:
         return "paper"
+
+
+def is_archived_stage(stage: str) -> bool:
+    """Return True if the stage is the archived (terminal) stage."""
+    return stage == "archived"

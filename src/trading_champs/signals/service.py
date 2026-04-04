@@ -5,6 +5,7 @@ from typing import Sequence
 from trading_champs.signals.backtester import Backtester, BacktestResult
 from trading_champs.signals.detectors.crossover import SignalType
 from trading_champs.signals.engine import SignalConfig, SignalEngine
+from trading_champs.signals.strategies import STRATEGY_REGISTRY
 
 
 class SignalService:
@@ -29,17 +30,24 @@ class SignalService:
         """Generate trading signals using specified strategy.
 
         Args:
-            strategy: Strategy to use ('ma_crossover', 'rsi', 'macd').
+            strategy: Strategy name. Supported: 'ma_crossover', 'rsi', 'macd',
+                'ma_crossover_preset', 'macd_trend', 'rsi_dynamic',
+                'bollinger', 'bollinger_rsi'.
 
         Returns:
             List of trading signals.
+
+        Raises:
+            ValueError: If strategy name is unknown.
         """
-        if strategy == "rsi":
-            return self._engine.generate_rsi_signals()
-        elif strategy == "macd":
-            return self._engine.generate_macd_signals()
-        else:
-            return self._engine.generate_ma_crossover_signals()
+        strategy_class = STRATEGY_REGISTRY.get(strategy)
+        if strategy_class is None:
+            raise ValueError(
+                f"Unknown strategy: {strategy!r}. "
+                f"Available: {list(STRATEGY_REGISTRY.keys())}"
+            )
+        instance = strategy_class(self.prices, self.config)
+        return instance.detect()
 
     def backtest(self, strategy: str = "ma_crossover") -> BacktestResult:
         """Run backtest for specified strategy.
@@ -60,11 +68,7 @@ class SignalService:
         Returns:
             Dictionary mapping strategy name to signals.
         """
-        return {
-            "ma_crossover": self._engine.generate_ma_crossover_signals(),
-            "rsi": self._engine.generate_rsi_signals(),
-            "macd": self._engine.generate_macd_signals(),
-        }
+        return {name: self.get_signals(name) for name in STRATEGY_REGISTRY}
 
     def get_indicators(self) -> dict[str, list[float | None]]:
         """Get all indicator values.

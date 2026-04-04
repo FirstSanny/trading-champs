@@ -392,20 +392,28 @@ class StrategyOrchestrator:
     Owns N StrategyLoop instances, each with its own connector, PnLTracker,
     and stage state. After each iterate_all(), runs StageEvaluator on each
     strategy and logs transitions to StageHistory.
+
+    If no strategies list is provided, automatically creates one StrategyLoopConfig
+    per entry in STRATEGY_REGISTRY (signals/strategies/__init__.py), each starting
+    at dry_run stage. STRATEGY_REGISTRY is the single source of truth.
     """
 
     def __init__(
         self,
-        strategies: list[StrategyLoopConfig],
+        strategies: Optional[list[StrategyLoopConfig]] = None,
         config: Optional[OrchestratorConfig] = None,
         evaluate_mode: bool = False,
+        strategy_defaults: Optional[dict] = None,
     ):
         """Initialize the orchestrator.
 
         Args:
-            strategies: List of per-strategy loop configurations.
+            strategies: Optional list of per-strategy loop configurations.
+                If omitted, one config per STRATEGY_REGISTRY entry is auto-created.
             config: Orchestrator-level configuration.
             evaluate_mode: If True, evaluate gates but do NOT trigger transitions.
+            strategy_defaults: Field overrides applied to each auto-created config
+                (e.g. {'symbols': ['BTC/USDT'], 'timeframe': '4h'}).
         """
         self._config = config or OrchestratorConfig()
         self._evaluate_mode = evaluate_mode
@@ -421,6 +429,14 @@ class StrategyOrchestrator:
             stage_history=self._stage_history,
             evaluate_mode=evaluate_mode,
         )
+
+        # Build strategy configs: use provided list OR auto-create from registry
+        if strategies is None:
+            from trading_champs.signals.strategies import create_orchestrator_configs
+            strategies = create_orchestrator_configs(
+                StrategyLoopConfig,
+                defaults=strategy_defaults,
+            )
 
         # Drift detectors per strategy (for paper/live strategies)
         self._strategy_loops: dict[str, StrategyLoop] = {}
@@ -524,21 +540,35 @@ class StrategyOrchestrator:
                 strategy_state = self._state_store.load(strategy_id)
                 metrics = strategy_loop.get_metrics(strategy_state.stage_entered_at)
 
+                # Consecutive demotions tracked in current_metrics
+                consecutive_demotions = strategy_state.current_metrics.get(
+                    "consecutive_demotions", 0
+                )
+
                 transition = self._evaluator.evaluate(
                     strategy_id=strategy_id,
                     current_stage=strategy_loop.config.stage,
                     stage_entered_at=strategy_state.stage_entered_at,
                     metrics=metrics,
+                    consecutive_demotions=consecutive_demotions,
                 )
 
                 if transition is not None:
+                    # Build updated metrics dict: preserve consecutive_demotions counter
+                    new_metrics_dict = dict(metrics.__dict__)
+                    if transition.trigger == "auto_demotion":
+                        new_metrics_dict["consecutive_demotions"] = consecutive_demotions + 1
+                    else:
+                        # Reset counter on promotion or archival
+                        new_metrics_dict["consecutive_demotions"] = 0
+
                     # Update local config and state store
                     strategy_loop.config.stage = transition.to_stage
                     new_state = StrategyState(
                         strategy_id=strategy_id,
                         stage=transition.to_stage,
                         stage_entered_at=datetime.utcnow(),
-                        current_metrics=metrics.__dict__,
+                        current_metrics=new_metrics_dict,
                     )
                     self._state_store.save(new_state)
 
@@ -565,6 +595,29 @@ class StrategyOrchestrator:
     def get_stage_history(self, strategy_id: str, limit: int = 50) -> list:
         """Get stage history for a strategy."""
         return self._stage_history.get_history(strategy_id, limit=limit)
+
+    def force_archive(
+        self,
+        strategy_id: str,
+        reason: str,
+        actor: str = "system",
+    ) -> StrategyState:
+        """Manually archive a strategy.
+
+        Args:
+            strategy_id: Strategy to archive.
+            reason: Reason for archiving.
+            actor: Who initiated.
+
+        Returns:
+            Updated StrategyState.
+        """
+        return self.force_stage(
+            strategy_id=strategy_id,
+            target_stage="archived",
+            reason=reason,
+            actor=actor,
+        )
 
     def force_stage(
         self,
@@ -603,11 +656,15 @@ class StrategyOrchestrator:
             actor=actor,
         )
 
+        # Carry over metrics but reset consecutive demotion counter
+        new_metrics = dict(current_state.current_metrics)
+        new_metrics["consecutive_demotions"] = 0
+
         new_state = StrategyState(
             strategy_id=strategy_id,
             stage=target_stage,
             stage_entered_at=datetime.utcnow(),
-            current_metrics={},
+            current_metrics=new_metrics,
         )
         self._state_store.save(new_state)
 

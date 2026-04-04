@@ -51,6 +51,7 @@ class StageEvaluator:
         current_stage: str,
         stage_entered_at: datetime,
         metrics: StrategyMetrics,
+        consecutive_demotions: int = 0,
     ) -> Optional[StageTransition]:
         """Evaluate a single strategy's stage gates.
 
@@ -65,6 +66,50 @@ class StageEvaluator:
         """
         config = get_stage_config(current_stage)
         days_in_stage = max(0, (datetime.utcnow() - stage_entered_at).days)
+
+        # Archived strategies are never re-evaluated automatically
+        if current_stage == "archived":
+            return None
+
+        # --- Archival triggers ---
+
+        # Trigger 1: Consecutive demotions exceeded limit
+        if config.consecutive_demote_limit > 0 and consecutive_demotions >= config.consecutive_demote_limit:
+            logger.warning(
+                f"Strategy {strategy_id} archived: {consecutive_demotions} consecutive demotions "
+                f"(limit={config.consecutive_demote_limit})"
+            )
+            return self._transition(
+                strategy_id,
+                current_stage,
+                "archived",
+                "auto_archive_consecutive_demotions",
+                metrics,
+            )
+
+        # Trigger 2: Stalled in dry_run — too many days, too few trades
+        if (
+            current_stage == "dry_run"
+            and config.dry_run_archive_after_days > 0
+            and config.dry_run_archive_min_trades > 0
+            and days_in_stage > config.dry_run_archive_after_days
+            and metrics.total_trades < config.dry_run_archive_min_trades
+        ):
+            logger.warning(
+                f"Strategy {strategy_id} archived: in dry_run {days_in_stage} days "
+                f"with only {metrics.total_trades} trades "
+                f"(min_trades={config.dry_run_archive_min_trades}, "
+                f"max_days={config.dry_run_archive_after_days})"
+            )
+            return self._transition(
+                strategy_id,
+                current_stage,
+                "archived",
+                "auto_archive_stalled_dry_run",
+                metrics,
+            )
+
+        # --- Normal gate evaluation ---
 
         # Check if current drawdown exceeds max for immediate demotion
         if metrics.current_drawdown_pct > config.max_drawdown_pct:
