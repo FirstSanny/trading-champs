@@ -82,6 +82,7 @@ class TestWatchlistRepositoryUnit:
 
         # Manually override timestamp to be recent
         import time
+
         repo._cache.timestamp = time.monotonic() - 10  # 10s ago, well within 300s
 
         result = repo.get_enabled_symbols()
@@ -113,6 +114,7 @@ class TestWatchlistRepositoryUnit:
         repo = self._make_repo(mock_client)
 
         import time
+
         repo._stale_cache = MagicMock()
         repo._stale_cache.symbols = ["STALE"]
         repo._stale_cache.timestamp = time.monotonic() - 600  # very old
@@ -149,6 +151,7 @@ class TestWatchlistRepositoryUnit:
         repo = self._make_repo(mock_client)
 
         import time
+
         repo._cache = MagicMock()
         repo._cache.symbols = ["OLD"]
         repo._cache.timestamp = time.monotonic()
@@ -213,9 +216,18 @@ class TestWatchlistRepositoryUnit:
         mock_client = MagicMock()
         # get_by_symbol returns entry
         mock_client._request.side_effect = [
-            [{"id": "abc", "symbol": "BTC/USDT", "asset_class": "crypto",
-              "enabled": True, "added_by": "x", "metadata": {},
-              "created_at": None, "updated_at": None}],  # get_by_symbol
+            [
+                {
+                    "id": "abc",
+                    "symbol": "BTC/USDT",
+                    "asset_class": "crypto",
+                    "enabled": True,
+                    "added_by": "x",
+                    "metadata": {},
+                    "created_at": None,
+                    "updated_at": None,
+                }
+            ],  # get_by_symbol
             [{"id": "abc"}],  # PATCH
         ]
         repo = self._make_repo(mock_client)
@@ -240,9 +252,18 @@ class TestWatchlistRepositoryUnit:
         """Successful update — invalidates cache."""
         mock_client = MagicMock()
         mock_client._request.side_effect = [
-            [{"id": "abc", "symbol": "AAPL", "asset_class": "stock",
-              "enabled": True, "added_by": "x", "metadata": {},
-              "created_at": None, "updated_at": None}],
+            [
+                {
+                    "id": "abc",
+                    "symbol": "AAPL",
+                    "asset_class": "stock",
+                    "enabled": True,
+                    "added_by": "x",
+                    "metadata": {},
+                    "created_at": None,
+                    "updated_at": None,
+                }
+            ],
             [{"id": "abc"}],
         ]
         repo = self._make_repo(mock_client)
@@ -257,9 +278,16 @@ class TestWatchlistRepositoryUnit:
         """Update with no changes — returns True without DB call."""
         mock_client = MagicMock()
         mock_client._request.return_value = [
-            {"id": "abc", "symbol": "AAPL", "asset_class": "stock",
-             "enabled": True, "added_by": "x", "metadata": {},
-             "created_at": None, "updated_at": None},
+            {
+                "id": "abc",
+                "symbol": "AAPL",
+                "asset_class": "stock",
+                "enabled": True,
+                "added_by": "x",
+                "metadata": {},
+                "created_at": None,
+                "updated_at": None,
+            },
         ]
         repo = self._make_repo(mock_client)
 
@@ -286,10 +314,12 @@ class TestWatchlistRepositoryUnit:
         repo = self._make_repo(mock_client)
         repo._cache = MagicMock()
 
-        count, errors = repo.bulk_add([
-            {"symbol": "BTC/USDT", "asset_class": "crypto"},
-            {"symbol": "ETH/USDT", "asset_class": "crypto"},
-        ])
+        count, errors = repo.bulk_add(
+            [
+                {"symbol": "BTC/USDT", "asset_class": "crypto"},
+                {"symbol": "ETH/USDT", "asset_class": "crypto"},
+            ]
+        )
 
         assert count == 2
         assert errors == []
@@ -301,10 +331,12 @@ class TestWatchlistRepositoryUnit:
         repo = self._make_repo(mock_client)
 
         with pytest.raises(ValidationError, match="validation failed"):
-            repo.bulk_add([
-                {"symbol": "BTC/USDT", "asset_class": "crypto"},
-                {"symbol": "AAPL", "asset_class": "crypto"},  # AAPL is not valid crypto
-            ])
+            repo.bulk_add(
+                [
+                    {"symbol": "BTC/USDT", "asset_class": "crypto"},
+                    {"symbol": "AAPL", "asset_class": "crypto"},  # AAPL is not valid crypto
+                ]
+            )
 
         mock_client._request.assert_not_called()
 
@@ -319,10 +351,12 @@ class TestWatchlistRepositoryUnit:
         repo = self._make_repo(mock_client)
         repo._cache = MagicMock()
 
-        count, errors = repo.bulk_add([
-            {"symbol": "BTC/USDT", "asset_class": "crypto"},
-            {"symbol": "ETH/USDT", "asset_class": "crypto"},
-        ])
+        count, errors = repo.bulk_add(
+            [
+                {"symbol": "BTC/USDT", "asset_class": "crypto"},
+                {"symbol": "ETH/USDT", "asset_class": "crypto"},
+            ]
+        )
 
         assert count == 1
         assert "ETH/USDT" in errors[0]
@@ -334,6 +368,7 @@ class TestWatchlistRepositoryUnit:
         repo = self._make_repo(mock_client)
 
         import time
+
         repo._cache = MagicMock()
         repo._cache.symbols = ["OLD"]
         repo._cache.timestamp = time.monotonic()
@@ -346,14 +381,24 @@ class TestWatchlistRepositoryUnit:
         """Soft-deleting a symbol clears the in-memory cache."""
         mock_client = MagicMock()
         mock_client._request.side_effect = [
-            [{"id": "1", "symbol": "BTC/USDT", "asset_class": "crypto",
-              "enabled": True, "added_by": "x", "metadata": {},
-              "created_at": None, "updated_at": None}],
+            [
+                {
+                    "id": "1",
+                    "symbol": "BTC/USDT",
+                    "asset_class": "crypto",
+                    "enabled": True,
+                    "added_by": "x",
+                    "metadata": {},
+                    "created_at": None,
+                    "updated_at": None,
+                }
+            ],
             [{"id": "1"}],
         ]
         repo = self._make_repo(mock_client)
 
         import time
+
         repo._cache = MagicMock()
         repo._cache.symbols = ["BTC/USDT"]
         repo._cache.timestamp = time.monotonic()
@@ -366,14 +411,24 @@ class TestWatchlistRepositoryUnit:
         """Updating a symbol clears the in-memory cache."""
         mock_client = MagicMock()
         mock_client._request.side_effect = [
-            [{"id": "1", "symbol": "AAPL", "asset_class": "stock",
-              "enabled": True, "added_by": "x", "metadata": {},
-              "created_at": None, "updated_at": None}],
+            [
+                {
+                    "id": "1",
+                    "symbol": "AAPL",
+                    "asset_class": "stock",
+                    "enabled": True,
+                    "added_by": "x",
+                    "metadata": {},
+                    "created_at": None,
+                    "updated_at": None,
+                }
+            ],
             [{"id": "1"}],
         ]
         repo = self._make_repo(mock_client)
 
         import time
+
         repo._cache = MagicMock()
         repo._cache.symbols = ["AAPL"]
         repo._cache.timestamp = time.monotonic()
@@ -409,16 +464,18 @@ class TestWatchlistRepositoryIntegration:
     def test_get_by_symbol_returns_watchlist_entry(self):
         """get_by_symbol returns a proper WatchlistEntry."""
         mock_client = MagicMock()
-        mock_client._request.return_value = [{
-            "id": "uuid-123",
-            "symbol": "AAPL",
-            "asset_class": "stock",
-            "enabled": False,
-            "added_by": "agent:momentum",
-            "metadata": {"exchange": "NYSE"},
-            "created_at": "2026-01-01T00:00:00Z",
-            "updated_at": "2026-01-02T00:00:00Z",
-        }]
+        mock_client._request.return_value = [
+            {
+                "id": "uuid-123",
+                "symbol": "AAPL",
+                "asset_class": "stock",
+                "enabled": False,
+                "added_by": "agent:momentum",
+                "metadata": {"exchange": "NYSE"},
+                "created_at": "2026-01-01T00:00:00Z",
+                "updated_at": "2026-01-02T00:00:00Z",
+            }
+        ]
         repo = WatchlistRepository(supabase_client=mock_client, ttl_seconds=300)
 
         entry = repo.get_by_symbol("AAPL")
