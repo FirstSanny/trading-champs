@@ -5,7 +5,7 @@ analyzing price series. They require an API key or fetcher and return signals
 based on off-chart data sources.
 """
 
-from typing import Any, Protocol, TypedDict
+from typing import Protocol, TypedDict
 
 from trading_champs.signals.detectors.crossover import SignalType
 

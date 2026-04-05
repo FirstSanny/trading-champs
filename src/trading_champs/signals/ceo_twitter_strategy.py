@@ -26,7 +26,7 @@ try:
 except ImportError:
     SentimentIntensityAnalyzer = None  # type: ignore[assignment, misc]
 
-from trading_champs.signals.backtester import Backtester, BacktestResult, PositionSide, SignalType
+from trading_champs.signals.backtester import Backtester, BacktestResult, SignalType
 
 
 class ExecutiveType(Enum):
@@ -513,7 +513,9 @@ class CEOTwitterStrategy:
 
             # Check each target symbol
             for sym in target_symbols:
-                signal, keyword = self._extract_signal(text, tweet["text"], sym, handle, exec_info)
+                signal, keyword = self._extract_signal(
+                    text, tweet["text"], tweet["timestamp"], sym, handle, exec_info
+                )
                 if signal:
                     signals.append(signal)
 
@@ -523,6 +525,7 @@ class CEOTwitterStrategy:
         self,
         text: str,
         raw_text: str,
+        tweet_timestamp: datetime,
         symbol: str,
         handle: str,
         exec_info: ExecutiveAccount,
@@ -554,7 +557,7 @@ class CEOTwitterStrategy:
 
         # Time decay
         now = datetime.now()
-        hours_old = (now - tweet["timestamp"]).total_seconds() / 3600
+        hours_old = (now - tweet_timestamp).total_seconds() / 3600
         decay_factor = max(0.5, 1.0 - (hours_old / self._config.signal_decay_hours))
         confidence *= decay_factor
 
@@ -568,7 +571,7 @@ class CEOTwitterStrategy:
                 raw_sentiment=raw_sentiment,
                 confidence=confidence,
                 is_direct_mention=is_direct,
-                timestamp=datetime.now(),
+                timestamp=tweet_timestamp,
                 text=raw_text,
             ),
             matched_keyword,
@@ -665,14 +668,16 @@ class CEOTwitterStrategy:
         if aggregated.signal_count < self._config.min_signals_for_action:
             return (
                 False,
-                f"Insufficient signals: {aggregated.signal_count} < {self._config.min_signals_for_action}",
+                f"Insufficient signals: "
+                f"{aggregated.signal_count} < {self._config.min_signals_for_action}",
             )
 
         # Check confidence
         if aggregated.total_confidence < self._config.min_confidence:
             return (
                 False,
-                f"Low confidence: {aggregated.total_confidence:.2f} < {self._config.min_confidence}",
+                f"Low confidence: "
+                f"{aggregated.total_confidence:.2f} < {self._config.min_confidence}",
             )
 
         # Check sentiment threshold

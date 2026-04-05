@@ -177,7 +177,6 @@ class SentimentAdapter(DataDrivenStrategy):
 
     def generate_signal(self, symbol: str) -> tuple[SignalType, StrategyMetadata, str]:
         signals, agg_score = self._strategy.fetch_and_score(symbol)
-        signal_type = self._strategy.generate_signal(agg_score, self._prev_sentiment)
         self._prev_sentiment = agg_score
         # Get direction from aggregate score
         direction = SignalType.NEUTRAL
