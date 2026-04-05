@@ -96,9 +96,18 @@ class TestWatchlistAPI:
         assert data["symbols"][0]["symbol"] == "BTC/USDT"
         assert data["symbols"][1]["added_by"] == "agent:momentum"
 
-    def test_get_watchlist_requires_auth(self, test_client):
-        """GET /api/watchlist without auth returns 401."""
+    def test_get_watchlist_public(self, test_client, mock_watchlist_repo):
+        """GET /api/watchlist without auth returns 200 (public endpoint)."""
+        mock_watchlist_repo.get_all_entries.return_value = []
         response = test_client.get("/api/watchlist")
+        assert response.status_code == 200
+
+    def test_patch_watchlist_requires_auth(self, test_client):
+        """PATCH /api/watchlist/{symbol} without auth returns 401."""
+        response = test_client.patch(
+            "/api/watchlist/AAPL",
+            json={"enabled": "false"},
+        )
         assert response.status_code == 401
 
     def test_post_watchlist_valid(self, test_client, mock_watchlist_repo):

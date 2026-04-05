@@ -383,7 +383,6 @@
         'use strict';
 
         var API_BASE = '/api';
-        var API_KEY = '';  // injected by server from API_SECRET env var
         var equityChart, dailyChart, strategyChart;
         var currentMode = 'paper';
         var showArchived = false;
@@ -699,7 +698,7 @@
             var body = JSON.stringify({ enabled: String(enabled) });
             fetch(API_BASE + '/watchlist/' + encodeURIComponent(symbol), {
                 method: 'PATCH',
-                headers: { 'Authorization': 'Bearer ' + API_KEY, 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json' },
                 body: body
             })
             .then(function(res) {
