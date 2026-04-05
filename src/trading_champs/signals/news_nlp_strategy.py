@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional, Sequence
 
-from trading_champs.signals.backtester import Backtester, BacktestResult, PositionSide, SignalType
+from trading_champs.signals.backtester import Backtester, BacktestResult, SignalType
 
 
 class EventType(Enum):

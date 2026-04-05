@@ -14,12 +14,12 @@ Key components:
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Optional, Sequence
 
-from trading_champs.signals.backtester import Backtester, BacktestResult, PositionSide, SignalType
+from trading_champs.signals.backtester import Backtester, BacktestResult, SignalType
 
 
 class SqueezePhase(Enum):

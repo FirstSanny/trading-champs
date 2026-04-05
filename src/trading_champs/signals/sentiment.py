@@ -21,8 +21,7 @@ try:
 except ImportError:
     SentimentIntensityAnalyzer = None  # type: ignore[assignment, misc]
 
-from trading_champs.signals.backtester import Backtester, BacktestResult, PositionSide, SignalType
-from trading_champs.signals.detectors.crossover import CrossoverDetector
+from trading_champs.signals.backtester import Backtester, BacktestResult, SignalType
 
 
 class SentimentSource(Enum):
@@ -248,24 +247,24 @@ class SocialMediaFetcher:
         """Generate mock tweet text."""
         if sentiment > 0.3:
             templates = [
-                f"$keyword looking strong today! 📈",
-                f"Just loaded up on $keyword, this is going to moon! 🚀",
-                f"$keyword breaking out! Bullish confirmation incoming",
-                f"$keyword holders are winning today 💰",
+                "$keyword looking strong today! 📈",
+                "Just loaded up on $keyword, this is going to moon! 🚀",
+                "$keyword breaking out! Bullish confirmation incoming",
+                "$keyword holders are winning today 💰",
             ]
         elif sentiment < -0.3:
             templates = [
-                f"$keyword getting crushed 😬",
-                f"$keyword dump incoming, get out while you can!",
-                f"Not looking good for $keyword today",
-                f"$keyword losing momentum, time to fold",
+                "$keyword getting crushed 😬",
+                "$keyword dump incoming, get out while you can!",
+                "Not looking good for $keyword today",
+                "$keyword losing momentum, time to fold",
             ]
         else:
             templates = [
-                f"Watching $keyword closely today",
-                f"$keyword consolidating, waiting for a breakout",
-                f"Any thoughts on $keyword?",
-                f"$keyword at support, let's see what happens",
+                "Watching $keyword closely today",
+                "$keyword consolidating, waiting for a breakout",
+                "Any thoughts on $keyword?",
+                "$keyword at support, let's see what happens",
             ]
         return random.choice(templates)
 
@@ -273,24 +272,24 @@ class SocialMediaFetcher:
         """Generate mock Reddit post title."""
         if sentiment > 0.3:
             templates = [
-                f"[Bullish] DD on $keyword - here's why we're going up",
-                f"$keyword YOLO update (+15% this week)",
-                f"Why $keyword is the best play right now (DD inside)",
-                f"$keyword gang, we made it! To the moon! 🚀🚀🚀",
+                "[Bullish] DD on $keyword - here's why we're going up",
+                "$keyword YOLO update (+15% this week)",
+                "Why $keyword is the best play right now (DD inside)",
+                "$keyword gang, we made it! To the moon! 🚀🚀🚀",
             ]
         elif sentiment < -0.3:
             templates = [
-                f"[Bearish] $keyword DD - why I'm exiting my position",
-                f"$keyword is dead money for now (chart included)",
-                f"Lost 40% on $keyword, here's what I learned",
-                f"$keyword is a trap - avoiding until further notice",
+                "[Bearish] $keyword DD - why I'm exiting my position",
+                "$keyword is dead money for now (chart included)",
+                "Lost 40% on $keyword, here's what I learned",
+                "$keyword is a trap - avoiding until further notice",
             ]
         else:
             templates = [
-                f"$keyword discussion - bull case vs bear case",
-                f"New to trading, what do you think of $keyword?",
-                f"$keyword technical analysis thread",
-                f"Should I add to my $keyword position?",
+                "$keyword discussion - bull case vs bear case",
+                "New to trading, what do you think of $keyword?",
+                "$keyword technical analysis thread",
+                "Should I add to my $keyword position?",
             ]
         return random.choice(templates)
 
@@ -298,24 +297,24 @@ class SocialMediaFetcher:
         """Generate mock financial news headline."""
         if sentiment > 0.3:
             templates = [
-                f"$keyword Surges on Strong Earnings Beat",
-                f"Analysts Upgrade $keyword to Buy on Growth Prospects",
-                f"$keyword Announces Major Partnership, Stock Jumps 10%",
-                f"$keyword CEO Excited About Product Pipeline, Shares Rise",
+                "$keyword Surges on Strong Earnings Beat",
+                "Analysts Upgrade $keyword to Buy on Growth Prospects",
+                "$keyword Announces Major Partnership, Stock Jumps 10%",
+                "$keyword CEO Excited About Product Pipeline, Shares Rise",
             ]
         elif sentiment < -0.3:
             templates = [
-                f"$keyword Tumbles on Guidance Cut, Revenue Miss",
-                f"Regulatory Concerns Weigh on $keyword Outlook",
-                f"$keyword Faces Class Action as Stock Drops 20%",
-                f"$keyword CFO Steps Down Amid Accounting Review",
+                "$keyword Tumbles on Guidance Cut, Revenue Miss",
+                "Regulatory Concerns Weigh on $keyword Outlook",
+                "$keyword Faces Class Action as Stock Drops 20%",
+                "$keyword CFO Steps Down Amid Accounting Review",
             ]
         else:
             templates = [
-                f"$keyword Reports In-Line Earnings, Shares Little Changed",
-                f"$keyword Acquires Startup, Financial Terms Undisclosed",
-                f"Analysts Mixed on $keyword After Investor Day",
-                f"$keyword Expands Buyback but Keeps Guidance Unchanged",
+                "$keyword Reports In-Line Earnings, Shares Little Changed",
+                "$keyword Acquires Startup, Financial Terms Undisclosed",
+                "Analysts Mixed on $keyword After Investor Day",
+                "$keyword Expands Buyback but Keeps Guidance Unchanged",
             ]
         return random.choice(templates)
 

@@ -9,13 +9,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from trading_champs.signals.backtester import SignalType
-from trading_champs.signals.strategies.data_adapters import (
-    CEOTwitterAdapter,
-    NewsNLPAdapter,
-    OptionsFlowAdapter,
-    SentimentAdapter,
-    ShortSqueezeAdapter,
-)
 from trading_champs.signals.strategies.data_protocol import DataDrivenStrategy, StrategyMetadata
 from trading_champs.signals.strategies.data_registry import DATA_STRATEGY_REGISTRY
 
