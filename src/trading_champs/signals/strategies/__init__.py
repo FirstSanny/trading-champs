@@ -2,6 +2,16 @@
 
 from trading_champs.signals.strategies.base import AbstractStrategy
 from trading_champs.signals.strategies.bollinger import BollingerRSIStrategy, BollingerStrategy
+from trading_champs.signals.strategies.data_adapters import (
+    CEOTwitterAdapter,
+    NewsNLPAdapter,
+    OptionsFlowAdapter,
+    SentimentAdapter,
+    ShortSqueezeAdapter,
+)
+from trading_champs.signals.strategies.data_protocol import DataDrivenStrategy, StrategyMetadata
+from trading_champs.signals.strategies.data_registry import DATA_STRATEGY_REGISTRY
+from trading_champs.signals.strategies.data_service import DataSignalResult, DataStrategyService
 from trading_champs.signals.strategies.ma_crossover import (
     MACrossoverPresetStrategy,
     MACrossoverStrategy,
@@ -65,10 +75,12 @@ def create_orchestrator_configs(
 
 
 __all__ = [
+    # Price-series strategy protocol and registry
     "AbstractStrategy",
     "Strategy",
     "STRATEGY_REGISTRY",
     "create_orchestrator_configs",
+    # Price-series strategies
     "MACrossoverStrategy",
     "MACrossoverPresetStrategy",
     "RSIStrategy",
@@ -77,4 +89,16 @@ __all__ = [
     "MACDTrendFilterStrategy",
     "BollingerStrategy",
     "BollingerRSIStrategy",
+    # Data-driven strategy protocol and registry
+    "DataDrivenStrategy",
+    "StrategyMetadata",
+    "DATA_STRATEGY_REGISTRY",
+    "DataSignalResult",
+    "DataStrategyService",
+    # Data-driven strategy adapters
+    "CEOTwitterAdapter",
+    "NewsNLPAdapter",
+    "OptionsFlowAdapter",
+    "ShortSqueezeAdapter",
+    "SentimentAdapter",
 ]

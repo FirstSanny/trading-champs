@@ -32,6 +32,7 @@ MA_PRESETS: list[MAPeriodPreset] = [
 class SignalConfig:
     """Configuration for signal generation."""
 
+    period: int = 20  # General lookback period (used by Bollinger, etc.)
     fast_ma_period: int = 20
     slow_ma_period: int = 50
     rsi_period: int = 14
@@ -43,6 +44,8 @@ class SignalConfig:
     # Trend filter settings
     use_trend_filter: bool = False
     trend_ma_period: int = 200
+    # RSI filter for Bollinger strategies
+    use_rsi_filter: bool = False
     # Dynamic RSI settings
     use_dynamic_rsi: bool = False
     rsi_percentile_low: float = 25.0

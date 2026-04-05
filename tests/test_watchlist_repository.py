@@ -70,6 +70,102 @@ class TestWatchlistRepositoryUnit:
         repo = WatchlistRepository(supabase_client=mock_client, ttl_seconds=300)
         return repo
 
+    # -------------------------------------------------------------------------
+    # get_all_entries cache tests
+    # -------------------------------------------------------------------------
+
+    def test_get_all_entries_cache_hit(self):
+        """Cache valid — returns cached without DB call."""
+        import time
+        from datetime import datetime
+
+        from trading_champs.data.watchlist_repository import WatchlistEntry
+
+        mock_client = MagicMock()
+        repo = self._make_repo(mock_client)
+
+        # Pre-populate _all_entries_cache with WatchlistEntry symbols
+        repo._all_entries_cache = MagicMock()
+        repo._all_entries_cache.symbols = [
+            WatchlistEntry(
+                id="1",
+                symbol="BTC/USDT",
+                asset_class="crypto",
+                enabled=True,
+                added_by="manual",
+                metadata={},
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+            ),
+        ]
+        repo._all_entries_cache.timestamp = time.monotonic() - 10  # 10s ago, within TTL
+
+        result = repo.get_all_entries()
+
+        assert len(result) == 1
+        assert result[0].symbol == "BTC/USDT"
+        mock_client._request.assert_not_called()
+
+    def test_get_all_entries_cache_miss_fetches_from_db(self):
+        """Cache miss — fetches from DB and populates cache."""
+
+        mock_client = MagicMock()
+        mock_client._request.return_value = [
+            {
+                "id": "1",
+                "symbol": "ETH/USDT",
+                "asset_class": "crypto",
+                "enabled": True,
+                "added_by": "manual",
+                "metadata": {},
+                "created_at": None,
+                "updated_at": None,
+            },
+        ]
+        repo = self._make_repo(mock_client)
+        repo._all_entries_cache = None  # ensure cache miss
+
+        result = repo.get_all_entries()
+
+        assert len(result) == 1
+        assert result[0].symbol == "ETH/USDT"
+        mock_client._request.assert_called_once()
+        assert repo._all_entries_cache is not None
+        assert repo._all_entries_cache.symbols == ["ETH/USDT"]
+
+        # Stale cache should be cleared on fresh fetch
+        assert repo._all_entries_stale_cache is None
+
+    def test_get_all_entries_db_error_returns_stale_cache(self):
+        """DB error — returns stale cache if available."""
+        import time
+
+        mock_client = MagicMock()
+        mock_client._request.side_effect = Exception("connection refused")
+        repo = self._make_repo(mock_client)
+
+        repo._all_entries_stale_cache = MagicMock()
+        repo._all_entries_stale_cache.symbols = ["STALE1", "STALE2"]
+        repo._all_entries_stale_cache.timestamp = time.monotonic() - 600  # very old
+
+        result = repo.get_all_entries()
+
+        assert result == ["STALE1", "STALE2"]
+
+    def test_get_all_entries_db_error_no_cache_returns_empty(self):
+        """DB error with no stale cache — returns empty list."""
+        mock_client = MagicMock()
+        mock_client._request.side_effect = Exception("connection refused")
+        repo = self._make_repo(mock_client)
+
+        result = repo.get_all_entries()
+
+        assert result == []
+
+    # -------------------------------------------------------------------------
+    # get_enabled_symbols tests
+    # -------------------------------------------------------------------------
+
     def test_get_enabled_symbols_cache_hit(self):
         """Cache valid — returns cached without DB call."""
         mock_client = MagicMock()

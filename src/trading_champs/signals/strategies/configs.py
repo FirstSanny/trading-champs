@@ -35,14 +35,3 @@ class MACDConfig:
     signal_period: int = 9
     use_trend_filter: bool = False
     trend_ma_period: int = 200
-
-
-@dataclass
-class BollingerConfig:
-    """Config for BollingerStrategy."""
-
-    period: int = 20
-    num_std: float = 2.0
-    use_rsi_filter: bool = False
-    rsi_period: int = 14
-    rsi_oversold: float = 30.0
