@@ -107,11 +107,19 @@ _dashboard_html = None
 
 
 def get_dashboard_html() -> str:
-    """Lazily load the dashboard HTML."""
+    """Lazily load the dashboard HTML with API secret injected."""
     global _dashboard_html
     if _dashboard_html is None:
+        import os
+
         html_path = _project_root / "src" / "trading_champs" / "web" / "dashboard.html"
         _dashboard_html = html_path.read_text()
+        # Inject API_SECRET so the dashboard can auth its own API calls
+        api_secret = os.environ.get("API_SECRET", "")
+        _dashboard_html = _dashboard_html.replace(
+            "var API_KEY = '';",  # type: ignore[assignment]
+            f"var API_KEY = '{api_secret}';"  # type: ignore[assignment]
+        )
     return _dashboard_html
 
 
