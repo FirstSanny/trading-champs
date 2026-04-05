@@ -9,6 +9,16 @@ from trading_champs.signals.ceo_twitter_strategy import (
     ExecutiveType,
 )
 from trading_champs.signals.engine import SignalEngine
+from trading_champs.signals.news_nlp_strategy import (
+    EventDetector,
+    EventType,
+    NewsArticle,
+    NewsFetcher,
+    NewsNLPConfig,
+    NewsNLPStrategy,
+    NLPSignal,
+)
+from trading_champs.signals.news_nlp_strategy import SentimentScorer as NLPSentimentScorer
 from trading_champs.signals.options_flow_strategy import (
     DarkPoolIndicator,
     DarkPoolPrint,
@@ -20,6 +30,14 @@ from trading_champs.signals.options_flow_strategy import (
     OptionsFlowFetcher,
     OptionsFlowStrategy,
 )
+from trading_champs.signals.sentiment import (
+    SentimentConfig,
+    SentimentScorer,
+    SentimentSignal,
+    SentimentSource,
+    SentimentStrategy,
+)
+from trading_champs.signals.service import SignalService
 from trading_champs.signals.short_squeeze_strategy import (
     CatalyticEvent,
     MomentumFetcher,
@@ -32,25 +50,15 @@ from trading_champs.signals.short_squeeze_strategy import (
     SqueezePhase,
     SqueezeSignal,
 )
-from trading_champs.signals.news_nlp_strategy import (
-    EventDetector,
-    EventType,
-    NLPSignal,
-    NewsArticle,
-    NewsNLPConfig,
-    NewsFetcher,
-    NewsNLPStrategy,
-    SentimentScorer as NLPSentimentScorer,
-)
-from trading_champs.signals.sentiment import (
-    SentimentConfig,
-    SentimentScorer,
-    SentimentSignal,
-    SentimentSource,
-    SentimentStrategy,
-)
-from trading_champs.signals.service import SignalService
 from trading_champs.signals.social_trading import SocialTrader, get_follow_signal
+from trading_champs.signals.strategies import (
+    DATA_STRATEGY_REGISTRY,
+    STRATEGY_REGISTRY,
+    DataDrivenStrategy,
+    DataSignalResult,
+    DataStrategyService,
+    StrategyMetadata,
+)
 
 __all__ = [
     "SignalService",
@@ -97,4 +105,12 @@ __all__ = [
     "EventType",
     "EventDetector",
     "NLPSentimentScorer",
+    # Data-driven strategy infrastructure
+    "DataDrivenStrategy",
+    "StrategyMetadata",
+    "DATA_STRATEGY_REGISTRY",
+    "DataSignalResult",
+    "DataStrategyService",
+    # Price-series strategy registry
+    "STRATEGY_REGISTRY",
 ]

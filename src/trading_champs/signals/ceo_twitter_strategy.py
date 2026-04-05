@@ -513,9 +513,7 @@ class CEOTwitterStrategy:
 
             # Check each target symbol
             for sym in target_symbols:
-                signal, keyword = self._extract_signal(
-                    text, tweet["text"], sym, handle, exec_info
-                )
+                signal, keyword = self._extract_signal(text, tweet["text"], sym, handle, exec_info)
                 if signal:
                     signals.append(signal)
 
@@ -540,7 +538,7 @@ class CEOTwitterStrategy:
         # Check for signal keywords
         matched_keyword = None
         for kw in SignalKeyword:
-            if any(kw.value[0] in text for k in kw.value):
+            if any(k in text for k in kw.value):
                 matched_keyword = kw
                 break
 
@@ -556,7 +554,7 @@ class CEOTwitterStrategy:
 
         # Time decay
         now = datetime.now()
-        hours_old = (now - datetime.now()).total_seconds() / 3600  # Simplified
+        hours_old = (now - tweet["timestamp"]).total_seconds() / 3600
         decay_factor = max(0.5, 1.0 - (hours_old / self._config.signal_decay_hours))
         confidence *= decay_factor
 
@@ -630,7 +628,10 @@ class CEOTwitterStrategy:
             side = "neutral"
 
         signal_count = len(symbol_signals)
-        if signal_count >= self._config.min_signals_for_action and total_conf > self._config.min_confidence:
+        if (
+            signal_count >= self._config.min_signals_for_action
+            and total_conf > self._config.min_confidence
+        ):
             if abs(agg_sentiment) > 0.5:
                 strength = "strong"
             elif abs(agg_sentiment) > 0.3:
@@ -662,18 +663,27 @@ class CEOTwitterStrategy:
         """
         # Check minimum signals requirement (HIGH RISK mitigation)
         if aggregated.signal_count < self._config.min_signals_for_action:
-            return False, f"Insufficient signals: {aggregated.signal_count} < {self._config.min_signals_for_action}"
+            return (
+                False,
+                f"Insufficient signals: {aggregated.signal_count} < {self._config.min_signals_for_action}",
+            )
 
         # Check confidence
         if aggregated.total_confidence < self._config.min_confidence:
-            return False, f"Low confidence: {aggregated.total_confidence:.2f} < {self._config.min_confidence}"
+            return (
+                False,
+                f"Low confidence: {aggregated.total_confidence:.2f} < {self._config.min_confidence}",
+            )
 
         # Check sentiment threshold
         if abs(aggregated.aggregated_sentiment) < self._config.sentiment_threshold:
             return False, f"Neutral sentiment: {aggregated.aggregated_sentiment:.2f}"
 
         # All checks passed
-        return True, f"Signal accepted: {aggregated.side} {aggregated.symbol} ({aggregated.strength})"
+        return (
+            True,
+            f"Signal accepted: {aggregated.side} {aggregated.symbol} ({aggregated.strength})",
+        )
 
     def generate_signal(
         self,

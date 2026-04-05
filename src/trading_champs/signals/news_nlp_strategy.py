@@ -168,47 +168,106 @@ class EventDetector:
 
     EVENT_PATTERNS: dict[EventType, list[str]] = {
         EventType.EARNINGS: [
-            "earnings", "revenue", "eps", "guidance", "quarterly results",
-            "q1", "q2", "q3", "q4", "fiscal year", "beat estimates",
+            "earnings",
+            "revenue",
+            "eps",
+            "guidance",
+            "quarterly results",
+            "q1",
+            "q2",
+            "q3",
+            "q4",
+            "fiscal year",
+            "beat estimates",
         ],
         EventType.MERGERS_ACQUISITIONS: [
-            "acquire", "acquisition", "merger", "buyout", "takeover",
-            "deal", "purchase", "merge with", "acquire stake",
+            "acquire",
+            "acquisition",
+            "merger",
+            "buyout",
+            "takeover",
+            "deal",
+            "purchase",
+            "merge with",
+            "acquire stake",
         ],
         EventType.FDA_DECISION: [
-            "fda", "approval", "drug approval", "clinical trial",
-            "fda panel", "new drug application", "nda", "biotech",
+            "fda",
+            "approval",
+            "drug approval",
+            "clinical trial",
+            "fda panel",
+            "new drug application",
+            "nda",
+            "biotech",
         ],
         EventType.REGULATORY: [
-            "sec", "ftc", "doj", "antitrust", "investigation", "fine",
-            "regulation", "compliance", "lawsuit", "settlement",
+            "sec",
+            "ftc",
+            "doj",
+            "antitrust",
+            "investigation",
+            "fine",
+            "regulation",
+            "compliance",
+            "lawsuit",
+            "settlement",
         ],
         EventType.ANALYST_UPGRADE: [
-            "upgrade", "raise price target", "buy rating", "outperform",
-            "overweight", "bullish", "upgrade from",
+            "upgrade",
+            "raise price target",
+            "buy rating",
+            "outperform",
+            "overweight",
+            "bullish",
+            "upgrade from",
         ],
         EventType.ANALYST_DOWNGRADE: [
-            "downgrade", "lower price target", "sell rating", "underperform",
-            "underweight", "bearish", "downgrade from",
+            "downgrade",
+            "lower price target",
+            "sell rating",
+            "underperform",
+            "underweight",
+            "bearish",
+            "downgrade from",
         ],
         EventType.INSIDER_TRADING: [
-            "insider buying", "insider selling", "ceo buys", "cfo sells",
-            "director purchases", "exec exercises options",
+            "insider buying",
+            "insider selling",
+            "ceo buys",
+            "cfo sells",
+            "director purchases",
+            "exec exercises options",
         ],
         EventType.DIVIDEND: [
-            "dividend", "quarterly dividend", "special dividend",
-            "dividend yield", "shareholder payout",
+            "dividend",
+            "quarterly dividend",
+            "special dividend",
+            "dividend yield",
+            "shareholder payout",
         ],
         EventType.BUYBACK: [
-            "buyback", "repurchase", "share repurchase", "stock buyback",
+            "buyback",
+            "repurchase",
+            "share repurchase",
+            "stock buyback",
         ],
         EventType.PRODUCT_LAUNCH: [
-            "launch", "unveil", "new product", "release", "debut",
-            "announce", "preview",
+            "launch",
+            "unveil",
+            "new product",
+            "release",
+            "debut",
+            "announce",
+            "preview",
         ],
         EventType.PARTNERSHIP: [
-            "partnership", "collaboration", "joint venture", "deal with",
-            "strategic alliance", "partner",
+            "partnership",
+            "collaboration",
+            "joint venture",
+            "deal with",
+            "strategic alliance",
+            "partner",
         ],
         EventType.GENERAL: [],
     }
@@ -273,6 +332,7 @@ class SentimentScorer:
         """Initialize VADER sentiment analyzer."""
         try:
             from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
             self._analyzer = SentimentIntensityAnalyzer()
             self._available = True
         except ImportError:
@@ -304,14 +364,41 @@ class SentimentScorer:
         """Fallback keyword-based sentiment scoring."""
         text_lower = text.lower()
         positive_words = [
-            "beat", "surge", "jump", "rise", "gain", "grow", "profit",
-            "upgrade", "buy", "bullish", "strong", "growth", "innovative",
-            "partnership", "launch", "approval", "acquire",
+            "beat",
+            "surge",
+            "jump",
+            "rise",
+            "gain",
+            "grow",
+            "profit",
+            "upgrade",
+            "buy",
+            "bullish",
+            "strong",
+            "growth",
+            "innovative",
+            "partnership",
+            "launch",
+            "approval",
+            "acquire",
         ]
         negative_words = [
-            "miss", "fall", "drop", "decline", "loss", "cut", "reduce",
-            "downgrade", "sell", "bearish", "weak", "investigation",
-            "fine", "lawsuit", "antitrust", "regulation",
+            "miss",
+            "fall",
+            "drop",
+            "decline",
+            "loss",
+            "cut",
+            "reduce",
+            "downgrade",
+            "sell",
+            "bearish",
+            "weak",
+            "investigation",
+            "fine",
+            "lawsuit",
+            "antitrust",
+            "regulation",
         ]
 
         pos_count = sum(1 for w in positive_words if w in text_lower)
@@ -331,8 +418,16 @@ class NewsFetcher:
     """
 
     SOURCES = [
-        "Reuters", "Bloomberg", "CNBC", "WSJ", "Financial Times",
-        "Barrons", "MarketWatch", "Seeking Alpha", "PR Newswire", "Business Wire",
+        "Reuters",
+        "Bloomberg",
+        "CNBC",
+        "WSJ",
+        "Financial Times",
+        "Barrons",
+        "MarketWatch",
+        "Seeking Alpha",
+        "PR Newswire",
+        "Business Wire",
     ]
 
     def __init__(self, api_keys: Optional[dict] = None):
@@ -675,9 +770,7 @@ class NewsNLPStrategy:
             decay_factor = self._calc_time_decay(age_hours)
 
             # Get event weight
-            event_weight = self._config.event_weights.get(
-                article.event_type, 1.0
-            )
+            event_weight = self._config.event_weights.get(article.event_type, 1.0)
 
             # Get historical reaction strength
             reaction_strength = self._pattern_matcher.get_reaction_strength(

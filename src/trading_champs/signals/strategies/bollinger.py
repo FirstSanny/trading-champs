@@ -16,13 +16,13 @@ class BollingerStrategy(AbstractStrategy):
 
     def detect(self) -> list[SignalType]:
         rsi_values = None
-        if self.config.use_dynamic_rsi:
+        if self.config.use_rsi_filter:
             rsi_values = RSI(self.prices, self.config.rsi_period)
         detector = BollingerBandsDetector(
             self.prices,
-            period=self.config.fast_ma_period,
+            period=self.config.period,
             num_std=2.0,
-            use_rsi_filter=self.config.use_trend_filter,
+            use_rsi_filter=self.config.use_rsi_filter,
             rsi_values=rsi_values,
             rsi_oversold=self.config.rsi_oversold,
         )
@@ -40,7 +40,7 @@ class BollingerRSIStrategy(AbstractStrategy):
         rsi_values = RSI(self.prices, self.config.rsi_period)
         detector = BollingerBandsDetector(
             self.prices,
-            period=self.config.fast_ma_period,
+            period=self.config.period,
             num_std=2.0,
             use_rsi_filter=True,
             rsi_values=rsi_values,

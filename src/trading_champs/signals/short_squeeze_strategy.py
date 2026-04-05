@@ -132,8 +132,17 @@ class ShortSqueezeConfig:
 
     # Symbols to track (high short interest candidates)
     symbols: tuple[str, ...] = (
-        "GME", "AMC", "BBBY", "BB", "NOK", "BBBY",
-        "KOSS", "EXPR", "SOS", "NAKD", "SNAP", "TWTR",
+        "GME",
+        "AMC",
+        "BBBY",
+        "BB",
+        "NOK",
+        "KOSS",
+        "EXPR",
+        "SOS",
+        "NAKD",
+        "SNAP",
+        "TWTR",
     )
 
 
@@ -295,7 +304,11 @@ class ShortInterestFetcher:
         total_volume = avg_volume + random.randint(-avg_volume // 4, avg_volume // 2)
 
         # Available shares to borrow
-        available = random.randint(100_000, 5_000_000) if si_percent > 15 else random.randint(1_000_000, 20_000_000)
+        available = (
+            random.randint(100_000, 5_000_000)
+            if si_percent > 15
+            else random.randint(1_000_000, 20_000_000)
+        )
 
         return ShortInterestData(
             symbol=symbol,
@@ -431,17 +444,26 @@ class SqueezeDetector:
         vol_ratio = momentum.volume_ratio
 
         # High SI + low price movement = accumulation
-        if si > self._config.min_short_interest_percent and velocity < self._config.min_price_velocity:
+        if (
+            si > self._config.min_short_interest_percent
+            and velocity < self._config.min_price_velocity
+        ):
             return SqueezePhase.ACCUMULATION
 
         # Rising price + high SI = buildup
-        if si > self._config.min_short_interest_percent and velocity >= self._config.min_price_velocity:
+        if (
+            si > self._config.min_short_interest_percent
+            and velocity >= self._config.min_price_velocity
+        ):
             if vol_ratio >= self._config.min_volume_ratio:
                 return SqueezePhase.SQUEEZE
             return SqueezePhase.BUILDUP
 
         # Very high velocity + high volume = squeeze
-        if velocity >= self._config.squeeze_price_velocity and vol_ratio >= self._config.min_volume_ratio:
+        if (
+            velocity >= self._config.squeeze_price_velocity
+            and vol_ratio >= self._config.min_volume_ratio
+        ):
             return SqueezePhase.SQUEEZE
 
         # Check for cooldown phase
@@ -452,7 +474,10 @@ class SqueezeDetector:
                 return SqueezePhase.COOLDOWN
 
         # Check for peak
-        if si > self._config.high_short_interest_percent and velocity > self._config.squeeze_price_velocity:
+        if (
+            si > self._config.high_short_interest_percent
+            and velocity > self._config.squeeze_price_velocity
+        ):
             return SqueezePhase.PEAK
 
         return SqueezePhase.ACCUMULATION
@@ -533,9 +558,14 @@ class SqueezeDetector:
         """
         if phase == SqueezePhase.SQUEEZE and squeeze_prob >= self._config.high_squeeze_probability:
             return "critical"
-        if phase == SqueezePhase.SQUEEZE or (phase == SqueezePhase.PEAK and squeeze_prob >= self._config.medium_squeeze_probability):
+        if phase == SqueezePhase.SQUEEZE or (
+            phase == SqueezePhase.PEAK and squeeze_prob >= self._config.medium_squeeze_probability
+        ):
             return "high"
-        if phase == SqueezePhase.BUILDUP and squeeze_prob >= self._config.medium_squeeze_probability:
+        if (
+            phase == SqueezePhase.BUILDUP
+            and squeeze_prob >= self._config.medium_squeeze_probability
+        ):
             return "medium"
         return "low"
 
@@ -582,7 +612,9 @@ class ShortSqueezeStrategy:
         """
         # Fetch current data
         short_interest = self._si_fetcher.fetch_short_interest(symbol)
-        momentum = self._momentum_fetcher.fetch_momentum(symbol, days=self._config.momentum_lookback_days)
+        momentum = self._momentum_fetcher.fetch_momentum(
+            symbol, days=self._config.momentum_lookback_days
+        )
         historical_si = self._si_fetcher.fetch_historical_short_interest(
             symbol, days=self._config.short_interest_lookback_days
         )
@@ -673,7 +705,10 @@ class ShortSqueezeStrategy:
             return False, f"Low urgency: {signal.urgency}"
 
         # All checks passed
-        return True, f"Trade signal: {signal.urgency.upper()} {signal.phase.value} for {signal.symbol}"
+        return (
+            True,
+            f"Trade signal: {signal.urgency.upper()} {signal.phase.value} for {signal.symbol}",
+        )
 
     def generate_signal(
         self,

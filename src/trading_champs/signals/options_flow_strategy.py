@@ -144,7 +144,16 @@ class OptionsFlowConfig:
 
     # Symbols to track
     symbols: tuple[str, ...] = (
-        "SPY", "QQQ", "TSLA", "AAPL", "NVDA", "AMD", "GME", "AMC", "BTC", "ETH"
+        "SPY",
+        "QQQ",
+        "TSLA",
+        "AAPL",
+        "NVDA",
+        "AMD",
+        "GME",
+        "AMC",
+        "BTC",
+        "ETH",
     )
 
     # Time decay
@@ -315,9 +324,7 @@ class OptionsFlowFetcher:
             timestamp = now - timedelta(hours=hours_ago)
 
             # Determine flow characteristics
-            sentiment = random.gauss(
-                profile["base_flow_sentiment"], profile["flow_volatility"]
-            )
+            sentiment = random.gauss(profile["base_flow_sentiment"], profile["flow_volatility"])
             sentiment = max(-1.0, min(1.0, sentiment))
 
             # Determine flow type based on size
@@ -393,9 +400,7 @@ class OptionsFlowFetcher:
             hours_ago = random.uniform(0, hours)
             timestamp = now - timedelta(hours=hours_ago)
 
-            sentiment = random.gauss(
-                profile["base_dark_sentiment"], profile["dark_volatility"]
-            )
+            sentiment = random.gauss(profile["base_dark_sentiment"], profile["dark_volatility"])
             sentiment = max(-1.0, min(1.0, sentiment))
 
             size = random.randint(5000, 100000)
@@ -524,9 +529,7 @@ class OptionsFlowStrategy:
         Returns:
             InstitutionalSignal with aggregated analysis.
         """
-        flows = self._fetcher.fetch_options_flow(
-            symbol, hours=self._config.flow_lookback_hours
-        )
+        flows = self._fetcher.fetch_options_flow(symbol, hours=self._config.flow_lookback_hours)
         dark_prints = self._fetcher.fetch_dark_pool_prints(
             symbol, hours=self._config.dark_pool_lookback_hours
         )
@@ -585,7 +588,9 @@ class OptionsFlowStrategy:
         # Calculate sentiment from dark pool prints
         dark_sentiment = 0.0
         for print_ in dark_prints:
-            if print_.dollar_value >= self._config.min_dollar_value * 0.1:  # Lower threshold for dark
+            if (
+                print_.dollar_value >= self._config.min_dollar_value * 0.1
+            ):  # Lower threshold for dark
                 dark_sentiment += print_.sentiment * (print_.dollar_value / 500_000)
 
         # Normalize sentiments
@@ -654,7 +659,10 @@ class OptionsFlowStrategy:
 
         # Check minimum flows requirement
         if signal.flow_count < self._config.min_flows_for_action:
-            return False, f"Insufficient flows: {signal.flow_count} < {self._config.min_flows_for_action}"
+            return (
+                False,
+                f"Insufficient flows: {signal.flow_count} < {self._config.min_flows_for_action}",
+            )
 
         # Check confidence
         if signal.confidence < self._config.min_confidence:

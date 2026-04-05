@@ -59,9 +59,7 @@ class SentimentConfig:
     # Minimum confidence to act
     min_confidence: float = 0.6
     # Data sources to use
-    sources: list[SentimentSource] = field(
-        default_factory=lambda: [SentimentSource.ALL]
-    )
+    sources: list[SentimentSource] = field(default_factory=lambda: [SentimentSource.ALL])
     # Symbols to track
     symbols: list[str] = field(default_factory=lambda: ["SPY", "QQQ", "AAPL", "TSLA", "GME"])
     # Lookback window for sentiment history (hours)

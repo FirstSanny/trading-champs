@@ -90,6 +90,23 @@
         .pill-group .pill { border: none; border-radius: 0; min-width: auto; }
         .pill-group .pill + .pill { border-left: 1px solid var(--color-border); }
 
+        /* Watchlist symbol pills */
+        .watchlist-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: var(--radius-sm); font-size: 12px; font-weight: 600; font-family: var(--font-mono); cursor: pointer; border: 1px solid var(--color-border); color: var(--color-text-secondary); background: transparent; transition: opacity 0.2s; user-select: none; }
+        .watchlist-pill:hover { border-color: var(--color-text-secondary); }
+        .watchlist-pill.active { border-color: var(--color-accent); color: var(--color-accent); background: rgba(0,212,170,0.08); }
+        .watchlist-pill.inactive { opacity: 0.5; border-color: var(--color-border); }
+        .watchlist-pill.inactive:hover { opacity: 0.75; }
+        .watchlist-pill.pending { opacity: 0.6; cursor: wait; }
+        .watchlist-pill .toggle-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .watchlist-pill.active .toggle-dot { background: var(--color-accent); }
+        .watchlist-pill.inactive .toggle-dot { background: var(--color-text-tertiary); }
+        .watchlist-section { padding: 0 var(--space-4) var(--space-3); }
+        .watchlist-group { margin-bottom: var(--space-3); }
+        .watchlist-group-label { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: var(--space-2); }
+        .watchlist-pills { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+        .watchlist-show-more { background: none; border: 1px dashed var(--color-border); border-radius: var(--radius-sm); padding: 3px 10px; font-size: 11px; color: var(--color-text-tertiary); cursor: pointer; }
+        .watchlist-show-more:hover { border-color: var(--color-text-secondary); color: var(--color-text-secondary); }
+
         .last-updated { font-size: 12px; color: var(--color-text-secondary); font-family: var(--font-mono); white-space: nowrap; }
 
         /* HERO STATS */
@@ -304,6 +321,20 @@
                 <tbody id="positions-tbody"></tbody>
             </table>
             <div id="positions-cards"></div>
+        </div>
+    </section>
+
+    <!-- WATCHLIST -->
+    <section>
+        <div class="section-header" role="button" tabindex="0" id="watchlist-header" onclick="toggleSection('watchlist')">
+            <span class="section-title">Watchlist</span>
+            <span class="section-count" id="watchlist-count">0</span>
+            <span class="section-chevron open" id="watchlist-chevron">▼</span>
+        </div>
+        <div class="collapsible-content open" id="watchlist-content">
+            <div class="watchlist-section" id="watchlist-container">
+                <div class="empty-state"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">No symbols in watchlist</div><div class="empty-state-body">Add symbols via the API or Supabase dashboard.</div></div>
+            </div>
         </div>
     </section>
 
@@ -588,6 +619,108 @@
             cards.innerHTML = DOMPurify.sanitize(cardHtml.join(''), { RETURN_TRUSTED_TYPE: false });
         }
 
+        /* ---- WATCHLIST ---- */
+        var _watchlistData = [];
+        var _watchlistPage = 20;
+        var _pendingToggles = {};
+
+        function renderWatchlist(entries) {
+            _watchlistData = entries || [];
+            _watchlistPage = 20;
+            document.getElementById('watchlist-count').textContent = _watchlistData.length;
+
+            var container = document.getElementById('watchlist-container');
+            if (_watchlistData.length === 0) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">No symbols in watchlist</div><div class="empty-state-body">Add symbols via the API or Supabase dashboard.</div></div>';
+                return;
+            }
+
+            var active = _watchlistData.filter(function(e) { return e.enabled; });
+            var inactive = _watchlistData.filter(function(e) { return !e.enabled; });
+
+            var html = '';
+            if (active.length > 0) {
+                html += '<div class="watchlist-group">';
+                html += '<div class="watchlist-group-label">Active (' + active.length + ')</div>';
+                html += '<div class="watchlist-pills">';
+                html += active.slice(0, _watchlistPage).map(function(e) {
+                    return renderWatchlistPill(e);
+                }).join('');
+                if (active.length > _watchlistPage) {
+                    html += '<button class="watchlist-show-more" onclick="watchlistShowMore()">Show ' + (active.length - _watchlistPage) + ' more</button>';
+                }
+                html += '</div></div>';
+            }
+            if (inactive.length > 0) {
+                html += '<div class="watchlist-group">';
+                html += '<div class="watchlist-group-label">Inactive (' + inactive.length + ')</div>';
+                html += '<div class="watchlist-pills">';
+                html += inactive.slice(0, _watchlistPage).map(function(e) {
+                    return renderWatchlistPill(e);
+                }).join('');
+                if (inactive.length > _watchlistPage) {
+                    html += '<button class="watchlist-show-more" onclick="watchlistShowMore()">Show ' + (inactive.length - _watchlistPage) + ' more</button>';
+                }
+                html += '</div></div>';
+            }
+            container.innerHTML = DOMPurify.sanitize(html, { RETURN_TRUSTED_TYPE: false });
+        }
+
+        function renderWatchlistPill(entry) {
+            var stateClass = entry.enabled ? 'active' : 'inactive';
+            var pendingClass = _pendingToggles[entry.symbol] ? 'pending' : '';
+            return '<button class="watchlist-pill ' + stateClass + ' ' + pendingClass + '" ' +
+                'title="' + (entry.enabled ? 'Click to pause' : 'Click to activate') + '" ' +
+                'onclick="onToggle(\'' + entry.symbol + '\', ' + !entry.enabled + ')" ' +
+                'aria-pressed="' + entry.enabled + '">' +
+                '<span class="toggle-dot"></span>' +
+                String(entry.symbol) +
+                '</button>';
+        }
+
+        function watchlistShowMore() {
+            _watchlistPage += 20;
+            renderWatchlist(_watchlistData);
+        }
+
+        function onToggle(symbol, enabled) {
+            // Debounce: ignore if toggle already pending for this symbol
+            if (_pendingToggles[symbol]) return;
+            _pendingToggles[symbol] = true;
+
+            // Optimistic update
+            var entry = _watchlistData.find(function(e) { return e.symbol === symbol; });
+            if (entry) {
+                entry.enabled = enabled;
+                renderWatchlist(_watchlistData);
+            }
+
+            var body = JSON.stringify({ enabled: String(enabled) });
+            fetch(API_BASE + '/watchlist/' + encodeURIComponent(symbol), {
+                method: 'PATCH',
+                headers: { 'Authorization': 'Bearer ' + API_KEY, 'Content-Type': 'application/json' },
+                body: body
+            })
+            .then(function(res) {
+                if (!res.ok) {
+                    // Rollback on failure
+                    if (entry) {
+                        entry.enabled = !enabled;
+                        renderWatchlist(_watchlistData);
+                    }
+                }
+                delete _pendingToggles[symbol];
+            })
+            .catch(function() {
+                // Rollback on network error
+                if (entry) {
+                    entry.enabled = !enabled;
+                    renderWatchlist(_watchlistData);
+                }
+                delete _pendingToggles[symbol];
+            });
+        }
+
         /* ---- CHARTS ---- */
         function buildChartDefaults() {
             return {
@@ -728,13 +861,15 @@
                 fetchJSON(API_BASE + '/dashboard?mode=' + currentMode),
                 fetchJSON(API_BASE + '/equity-curve?mode=' + currentMode),
                 fetchJSON(API_BASE + '/strategy-curves?mode=' + currentMode),
-                fetchJSON(API_BASE + '/strategies/overview' + (showArchived ? '?include_archived=true' : ''))
+                fetchJSON(API_BASE + '/strategies/overview' + (showArchived ? '?include_archived=true' : '')),
+                fetchJSON(API_BASE + '/watchlist')
             ])
             .then(function(results) {
                 var dashData = results[0];
                 var curveData = results[1];
                 var stratData = results[2];
                 var strategiesOverview = results[3];
+                var watchlistData = results[4];
 
                 if (dashData.error) showError(dashData.error + ' \u2014 Showing ' + dashData.mode + ' mode data.');
 
@@ -748,6 +883,7 @@
                 renderCharts(curveData, dashData);
                 renderStrategyChart(stratData);
                 renderStrategies(strategiesOverview.strategies || []);
+                renderWatchlist(watchlistData ? watchlistData.symbols : []);
 
                 var now = new Date();
                 document.getElementById('last-updated').textContent = 'Updated ' +

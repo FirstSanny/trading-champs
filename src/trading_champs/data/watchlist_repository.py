@@ -147,6 +147,8 @@ class WatchlistRepository:
         self._lock = threading.Lock()
         self._cache: Optional[_CacheEntry] = None
         self._stale_cache: Optional[_CacheEntry] = None
+        self._all_entries_cache: Optional[_CacheEntry] = None
+        self._all_entries_stale_cache: Optional[_CacheEntry] = None
 
     # -------------------------------------------------------------------------
     # Cache helpers
@@ -162,6 +164,8 @@ class WatchlistRepository:
             # Move current cache to stale before replacing
             self._stale_cache = self._cache
             self._cache = None
+            self._all_entries_stale_cache = self._all_entries_cache
+            self._all_entries_cache = None
 
     # -------------------------------------------------------------------------
     # Symbol queries
@@ -230,6 +234,16 @@ class WatchlistRepository:
         Returns:
             List of WatchlistEntry objects.
         """
+        # Fast path: cache hit
+        with self._lock:
+            if self._cache_is_valid(self._all_entries_cache):
+                logger.debug(
+                    "Watchlist all_entries cache hit: %d entries",
+                    len(self._all_entries_cache.symbols),  # type: ignore[arg-type]
+                )
+                return list(self._all_entries_cache.symbols)  # type: ignore[arg-type]
+
+        # Cache miss or expired — fetch from DB
         try:
             rows = self._client._request(
                 "GET",
@@ -242,12 +256,21 @@ class WatchlistRepository:
             )
         except Exception as e:
             logger.error("Watchlist DB error (fetching all entries): %s", e)
+            # Fall back to stale cache
+            with self._lock:
+                if self._all_entries_stale_cache is not None:
+                    logger.warning(
+                        "Returning stale all_entries cache (%d entries)",
+                        len(self._all_entries_stale_cache.symbols),  # type: ignore[arg-type]
+                    )
+                    return list(self._all_entries_stale_cache.symbols)  # type: ignore[arg-type]
             return []
 
         if not isinstance(rows, list):
+            logger.warning("Unexpected watchlist response type: %s", type(rows).__name__)
             return []
 
-        entries = []
+        entries: list[WatchlistEntry] = []
         for row in rows:
             try:
                 entries.append(
@@ -266,6 +289,17 @@ class WatchlistRepository:
             except Exception as e:
                 logger.warning("Skipping malformed watchlist row: %s", e)
                 continue
+
+        # Populate cache — store entries as list in symbols field (generic cache slot)
+        entry_symbols = [e.symbol for e in entries]
+        with self._lock:
+            self._all_entries_cache = _CacheEntry(
+                symbols=entry_symbols,  # type: ignore[arg-type]
+                timestamp=time.monotonic(),
+            )
+            self._all_entries_stale_cache = None
+
+        logger.debug("Watchlist all_entries cache miss: fetched %d entries from DB", len(entries))
         return entries
 
     def get_by_symbol(self, symbol: str) -> Optional[WatchlistEntry]:
