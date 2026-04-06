@@ -62,9 +62,11 @@ deploy:vercel:
   stage: deploy
   image: node:20
   before_script:
-    - npm install -g vercel@34
+    - npm install -g vercel
   script:
-    - vercel --prod --yes --token=$VERCEL_TOKEN
+    - vercel pull --yes --environment=production --token=$VERCEL_TOKEN
+    - vercel build --prod --token=$VERCEL_TOKEN
+    - vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
   environment:
     name: production
     url: $CI_ENVIRONMENT_URL

@@ -82,7 +82,16 @@ Thumbs.db
 # Playwright
 .playwright-mcp
 
+# Supabase CLI
+supabase/.temp/
+
+# Vercel
+trading-champs.vercel.app/
+.vercel/
+
 # Agent and project metadata
 .claude/
 memory/
 public/
+
+.env*.local
