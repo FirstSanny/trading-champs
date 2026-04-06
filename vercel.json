@@ -5,11 +5,5 @@
       "src": "/(.*)",
       "dest": "api/index.py"
     }
-  ],
-  "crons": [
-    {
-      "path": "/api/orchestrator/iterate",
-      "schedule": "30 14 * * 1-5"
-    }
   ]
 }
