@@ -5,7 +5,7 @@ import logging
 import sqlite3
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -14,7 +14,7 @@ from typing import Any, Optional
 from trading_champs.core.drift_detector import DriftDetector
 from trading_champs.core.drift_store import DriftStore
 from trading_champs.core.loop import TradingLoop
-from trading_champs.core.loop_state import LoopConfig, LoopStateStore, RedisDistributedLock
+from trading_champs.core.loop_state import LoopConfig, LoopStateStore
 from trading_champs.core.stage_config import STAGE_CONFIGS, StageConfig, get_stage_config
 from trading_champs.core.stage_evaluator import StageEvaluator, StrategyMetrics
 from trading_champs.core.stage_history import StageHistory
@@ -456,35 +456,20 @@ class StrategyOrchestrator:
     def iterate_all(self, idempotency_key: Optional[str] = None) -> dict[str, Any]:
         """Run one iteration across all strategy loops.
 
-        Uses RedisDistributedLock to prevent concurrent invocations.
-        If lock is held, returns early with skipped status.
+        Idempotency is handled at the per-strategy level via each
+        TradingLoop.iterate()'s idempotency key (e.g. "orchestrator_rsi").
+        Two Vercel instances running iterate_all() simultaneously will each
+        run all strategies, but per-strategy idempotency ensures each
+        strategy only executes once across both instances.
 
         Args:
-            idempotency_key: Optional idempotency key.
+            idempotency_key: Optional idempotency key (ignored at orchestrator
+                level; per-strategy idempotency keys handle deduplication).
 
         Returns:
             Dict with results for each strategy.
         """
-        import os
-
-        redis_url = os.environ.get("REDIS_URL", self._config.redis_url)
-        lock = RedisDistributedLock(
-            redis_url=redis_url,
-            lock_ttl_seconds=self._config.lock_ttl_seconds,
-        )
-
-        if not lock.acquire(idempotency_key):
-            return {
-                "status": "skipped",
-                "reason": "another_instance_running",
-                "idempotency_key": idempotency_key,
-                "timestamp": datetime.utcnow().isoformat(),
-            }
-
-        try:
-            return self._iterate_all_impl()
-        finally:
-            lock.release(idempotency_key)
+        return self._iterate_all_impl()
 
     def _refresh_symbols_from_watchlist(self) -> None:
         """Fetch enabled symbols from watchlist and distribute across strategy loops.
@@ -525,8 +510,11 @@ class StrategyOrchestrator:
             "strategies": {},
         }
 
-        # Refresh symbols from watchlist DB before iterating
-        self._refresh_symbols_from_watchlist()
+        try:
+            # Refresh symbols from watchlist DB before iterating (with timeout)
+            self._refresh_symbols_from_watchlist()
+        except Exception as e:
+            logger.warning("Watchlist refresh failed, continuing with env symbols: %s", e)
 
         # Run all strategy iterations in parallel via ThreadPoolExecutor
         def run_strategy(
@@ -552,9 +540,30 @@ class StrategyOrchestrator:
                 executor.submit(run_strategy, sid, slo): sid
                 for sid, slo in self._strategy_loops.items()
             }
-            for future in futures:
-                strategy_id, result = future.result()
-                results["strategies"][strategy_id] = result
+            # Wait for all futures with a total timeout so the whole iterate_all
+            # doesn't hang beyond ~45s (leaves time for release in finally block)
+            done, not_done = wait(futures, timeout=45)
+            for future in done:
+                try:
+                    strategy_id, result = future.result(timeout=5)
+                    results["strategies"][strategy_id] = result
+                except TimeoutError:
+                    sid = futures[future]
+                    logger.error(f"Strategy {sid} result timed out — continuing")
+                    results["strategies"][sid] = {
+                        "status": "error",
+                        "strategy_id": sid,
+                        "error": "result timed out after 5s",
+                    }
+            for future in not_done:
+                sid = futures[future]
+                future.cancel()
+                logger.warning(f"Strategy {sid} future not done after 45s timeout — cancelling")
+                results["strategies"][sid] = {
+                    "status": "error",
+                    "strategy_id": sid,
+                    "error": "iterate timed out after 45s total",
+                }
 
         # Update stages from state store (sequential — DB writes)
         for strategy_id, strategy_loop in self._strategy_loops.items():

@@ -5,6 +5,7 @@ from trading_champs.data.connectors.alpaca_market_data_connector import AlpacaMa
 from trading_champs.data.connectors.base import BaseConnector
 from trading_champs.data.connectors.ccxt_connector import CCXTConnector
 from trading_champs.data.connectors.dry_run_connector import DryRunConnector
+from trading_champs.data.connectors.yahoo_finance_connector import YahooFinanceConnector
 
 # Renamed alias for clarity (AlpacaPaperConnector = AlpacaConnector(mode='paper'))
 AlpacaPaperAPIConnector = AlpacaConnector
@@ -16,4 +17,5 @@ __all__ = [
     "BaseConnector",
     "CCXTConnector",
     "DryRunConnector",
+    "YahooFinanceConnector",
 ]
