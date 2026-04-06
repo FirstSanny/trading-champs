@@ -79,12 +79,11 @@ deploy:n8n:
   before_script:
     - pip install --no-cache-dir requests
   script:
+    - export N8N_BASE_URL="$N8N_BASE_URL"
+    - export N8N_API_KEY="$N8N_API_KEY"
+    - export VERCEL_API_URL="$VERCEL_API_URL"
+    - export VERCEL_API_SECRET="$VERCEL_API_SECRET"
     - python scripts/deploy_n8n_workflow.py n8n/workflows/orchestrator-iterate.json
-  variables:
-    N8N_BASE_URL: $N8N_BASE_URL
-    N8N_API_KEY: $N8N_API_KEY
-    VERCEL_API_URL: $VERCEL_API_URL
-    VERCEL_API_SECRET: $VERCEL_API_SECRET
   only:
     - main
   when: on_success
