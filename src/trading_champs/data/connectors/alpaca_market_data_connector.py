@@ -105,8 +105,20 @@ class AlpacaMarketDataConnector(BaseConnector):
         except requests.exceptions.HTTPError as e:
             if e.response is not None and e.response.status_code == 403:
                 raise ConnectionError("Alpaca Data API key invalid or no data subscription")
+            logger.error(
+                "Alpaca Data API HTTPError during connect: status=%s body=%s",
+                e.response.status_code if e.response is not None else "unknown",
+                e.response.text[:200] if e.response is not None else "no response",
+            )
             raise ConnectionError(f"Alpaca Data API connection failed: {e}")
+        except requests.exceptions.Timeout:
+            logger.error("Alpaca Data API connection timed out to %s", ALPACA_DATA_API)
+            raise ConnectionError(f"Alpaca Data API connection timed out to {ALPACA_DATA_API}")
+        except requests.exceptions.ConnectionError as e:
+            logger.error("Alpaca Data API connection error (network reachability): %s", e)
+            raise ConnectionError(f"Alpaca Data API unreachable: {e}")
         except Exception as e:
+            logger.error("Alpaca Data API unexpected connect error: %s", e)
             raise ConnectionError(f"Alpaca Data API connection failed: {e}")
 
     def disconnect(self) -> None:
