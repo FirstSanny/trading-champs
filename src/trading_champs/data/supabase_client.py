@@ -39,21 +39,21 @@ class SupabaseClient:
             return False
 
         try:
-            import httpx
+            import requests
 
             # Test the connection with a lightweight request
-            with httpx.Client(timeout=10.0) as client:
-                resp = client.get(
-                    f"{self.url}/rest/v1/",
-                    headers={"apikey": self.anon_key, "Authorization": f"Bearer {self.anon_key}"},
-                )
-                if resp.status_code < 500:
-                    self._connected = True
-                    logger.info("Connected to Supabase")
-                    return True
-                else:
-                    logger.error(f"Supabase connection test failed: {resp.status_code}")
-                    return False
+            resp = requests.get(
+                f"{self.url}/rest/v1/",
+                headers={"apikey": self.anon_key, "Authorization": f"Bearer {self.anon_key}"},
+                timeout=10,
+            )
+            if resp.status_code < 500:
+                self._connected = True
+                logger.info("Connected to Supabase")
+                return True
+            else:
+                logger.error(f"Supabase connection test failed: {resp.status_code}")
+                return False
         except Exception as e:
             logger.error(f"Failed to connect to Supabase: {e}")
             return False
@@ -84,7 +84,7 @@ class SupabaseClient:
         Returns:
             Response data or None
         """
-        import httpx
+        import requests
 
         if not self._connected:
             raise ConnectionError("Supabase not connected")
@@ -98,20 +98,21 @@ class SupabaseClient:
         }
 
         try:
-            with httpx.Client(timeout=15.0) as client:
-                resp = client.request(method, url, json=json, params=params, headers=headers)
-                if resp.status_code >= 400:
-                    logger.error(
-                        "Supabase request failed: %s %s -> %s %s",
-                        method,
-                        path,
-                        resp.status_code,
-                        resp.text[:200],
-                    )
-                    return None
-                if resp.text:
-                    return cast("dict[Any, Any] | list[Any]", resp.json())
+            resp = requests.request(
+                method, url, json=json, params=params, headers=headers, timeout=15
+            )
+            if resp.status_code >= 400:
+                logger.error(
+                    "Supabase request failed: %s %s -> %s %s",
+                    method,
+                    path,
+                    resp.status_code,
+                    resp.text[:200],
+                )
                 return None
+            if resp.text:
+                return cast("dict[Any, Any] | list[Any]", resp.json())
+            return None
         except Exception as e:
             logger.error(f"Supabase request error: {e}")
             return None

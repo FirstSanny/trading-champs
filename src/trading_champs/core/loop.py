@@ -18,6 +18,7 @@ from trading_champs.data.connectors.alpaca_connector import (
 from trading_champs.data.connectors.alpaca_market_data_connector import AlpacaMarketDataConnector
 from trading_champs.data.connectors.ccxt_connector import CCXTConnector
 from trading_champs.data.connectors.dry_run_connector import DryRunConnector
+from trading_champs.data.connectors.yahoo_finance_connector import YahooFinanceConnector
 from trading_champs.pl.tracker import PnLTracker
 from trading_champs.risk.position_sizer import PercentRisk
 from trading_champs.risk.stop_loss import FixedStopLoss
@@ -69,6 +70,7 @@ class TradingLoop:
         # Initialize connectors lazily
         self._ccxt: Optional[CCXTConnector] = None
         self._alpaca_market: Optional[AlpacaMarketDataConnector] = None
+        self._yahoo: Optional[YahooFinanceConnector] = None
         self._alpaca: Optional["AlpacaConnector | DryRunConnector"] = None
         self._executor: Optional[TradeExecutor] = None
 
@@ -79,13 +81,53 @@ class TradingLoop:
             self._state = self.state_store.load()
         return self._state
 
-    def _ensure_data_connector(self) -> "CCXTConnector | AlpacaMarketDataConnector":
-        """Lazily create and connect the data connector based on config.data_connector."""
+    def _ensure_data_connector(
+        self,
+    ) -> "CCXTConnector | AlpacaMarketDataConnector | YahooFinanceConnector":
+        """Lazily create and connect the data connector based on config.data_connector.
+
+        Fallback chain when primary connector fails:
+          alpaca_market → yahoo_finance → ccxt (Binance, crypto only)
+
+        Yahoo Finance is the free fallback for stocks. CCXT/Binance only works
+        for crypto symbols.
+        """
         if self.config.data_connector == "alpaca_market":
             if self._alpaca_market is None:
                 self._alpaca_market = AlpacaMarketDataConnector()
-                self._alpaca_market.connect()
-            return self._alpaca_market
+            if not self._alpaca_market.is_connected():
+                try:
+                    self._alpaca_market.connect()
+                except ConnectionError as e:
+                    logger.warning(
+                        "Alpaca Market Data failed (%s), "
+                        "falling back to Yahoo Finance for equity data",
+                        e,
+                    )
+                    self.config.data_connector = "yahoo_finance"
+                    self._alpaca_market = None
+            if self._alpaca_market is not None and self._alpaca_market.is_connected():
+                return self._alpaca_market
+            # Fall through to Yahoo Finance
+
+        if self.config.data_connector == "yahoo_finance":
+            if self._yahoo is None:
+                self._yahoo = YahooFinanceConnector()
+            if not self._yahoo.is_connected():
+                try:
+                    self._yahoo.connect()
+                except ConnectionError as e:
+                    logger.warning(
+                        "Yahoo Finance failed (%s), falling back to CCXT/%s",
+                        e,
+                        self.config.exchange,
+                    )
+                    self.config.data_connector = "ccxt"
+                    self._yahoo = None
+            if self._yahoo is not None and self._yahoo.is_connected():
+                return self._yahoo
+            # Fall through to CCXT
+
         if self._ccxt is None:
             self._ccxt = CCXTConnector({"exchange": self.config.exchange})
             self._ccxt.connect()
