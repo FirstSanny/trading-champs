@@ -134,6 +134,9 @@ class WatchlistRepository:
             from trading_champs.data.supabase_client import get_supabase_client
 
             self._client = get_supabase_client()
+            # Ensure connection is established (singleton calls connect() lazily)
+            if not self._client._connected:
+                self._client.connect()
         else:
             self._client = supabase_client
 

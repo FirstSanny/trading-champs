@@ -62,12 +62,9 @@ deploy:vercel:
   stage: deploy
   image: node:20
   before_script:
-    - npm install -g vercel
-    - curl -fsSL https://astral.sh/uv/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"
+    - npm install -g vercel@34
   script:
-    - vercel pull --yes --environment=production --token=$VERCEL_TOKEN
-    - vercel build --prod --token=$VERCEL_TOKEN
-    - vercel deploy --prebuilt --prod --token=$VERCEL_TOKEN
+    - vercel --prod --yes --token=$VERCEL_TOKEN
   environment:
     name: production
     url: $CI_ENVIRONMENT_URL
