@@ -11,10 +11,5 @@
       "path": "/api/orchestrator/iterate",
       "schedule": "30 14 * * 1-5"
     }
-  ],
-  "functions": {
-    "api/index.py": {
-      "runtime": "python3.11"
-    }
-  }
+  ]
 }
