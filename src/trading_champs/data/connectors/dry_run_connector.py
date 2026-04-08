@@ -65,21 +65,39 @@ class DryRunConnector(BaseConnector):
         order_id = f"dr_order_{self._order_counter}"
         created_at = datetime.now().isoformat()
 
-        if not limit_price or limit_price <= 0:
-            logger.warning(f"Dry-run order rejected for {symbol}: no valid limit_price")
-            return {
-                "id": order_id,
-                "status": "rejected",
-                "symbol": symbol,
-                "side": side,
-                "qty": str(qty),
-                "filled_qty": "0",
-                "filled_avg_price": None,
-                "created_at": created_at,
-                "message": "Dry-run rejected: no limit_price",
-            }
-
-        filled_price = self._apply_slippage(limit_price, side)
+        # For market orders, use limit_price as the fill price (latest market price).
+        # If limit_price is also missing/zero, reject.
+        if order_type == "market":
+            if not limit_price or limit_price <= 0:
+                logger.warning(f"Dry-run order rejected for {symbol}: market order with no price")
+                return {
+                    "id": order_id,
+                    "status": "rejected",
+                    "symbol": symbol,
+                    "side": side,
+                    "qty": str(qty),
+                    "filled_qty": "0",
+                    "filled_avg_price": None,
+                    "created_at": created_at,
+                    "message": "Dry-run rejected: market order with no price",
+                }
+            filled_price = self._apply_slippage(limit_price, side)
+        else:
+            # Limit order: requires a valid limit_price
+            if not limit_price or limit_price <= 0:
+                logger.warning(f"Dry-run order rejected for {symbol}: limit order with no valid limit_price")
+                return {
+                    "id": order_id,
+                    "status": "rejected",
+                    "symbol": symbol,
+                    "side": side,
+                    "qty": str(qty),
+                    "filled_qty": "0",
+                    "filled_avg_price": None,
+                    "created_at": created_at,
+                    "message": "Dry-run rejected: no valid limit_price",
+                }
+            filled_price = self._apply_slippage(limit_price, side)
 
         result = {
             "id": order_id,
