@@ -85,7 +85,9 @@ class DryRunConnector(BaseConnector):
         else:
             # Limit order: requires a valid limit_price
             if not limit_price or limit_price <= 0:
-                logger.warning(f"Dry-run order rejected for {symbol}: limit order with no valid limit_price")
+                logger.warning(
+                    f"Dry-run order rejected for {symbol}: limit order with no valid limit_price"
+                )
                 return {
                     "id": order_id,
                     "status": "rejected",
