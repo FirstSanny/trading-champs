@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import logging
+import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import wraps
-from typing import Any, Callable, Optional
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from trading_champs.data.supabase_client import SupabaseClient
 
 
 @dataclass
@@ -275,25 +280,30 @@ def distributed_lock(
 
 
 class LoopStateStore:
-    """Persists LoopState to SQLite so state survives serverless cold starts."""
+    """Persists LoopState to Supabase with SQLite/in-memory fallback.
 
-    def __init__(self, db_path: str = "data/trading_loop.db"):
+    Priority: Supabase (primary) -> SQLite (fallback) -> in-memory (last resort).
+    This ensures state survives serverless cold starts where SQLite is ephemeral.
+    """
+
+    def __init__(
+        self,
+        db_path: str = "data/trading_loop.db",
+        supabase: Optional["SupabaseClient"] = None,
+    ):
         self.db_path = db_path
+        self._supabase = supabase
         self._db_initialized = False
+        self._in_memory: Optional[LoopState] = None
         try:
             self._init_db()
             self._db_initialized = True
         except Exception as e:
-            logger.warning(
-                f"LoopStateStore: SQLite unavailable ({e}) — running without persistence"
-            )
+            logger.warning(f"LoopStateStore: SQLite unavailable ({e}) — using fallback")
             self._db_initialized = False
 
     def _init_db(self) -> None:
         """Create the loop state table if it doesn't exist."""
-        import sqlite3
-        from pathlib import Path
-
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -317,79 +327,125 @@ class LoopStateStore:
         conn.close()
 
     def load(self) -> LoopState:
-        """Load state from SQLite."""
-        if not self._db_initialized:
-            return LoopState()
+        """Load state — tries Supabase first, then SQLite, then in-memory."""
+        # 1. Try Supabase
+        if self._supabase is not None and self._supabase.is_connected():
+            try:
+                row = self._supabase.get_loop_state(None)
+                if row:
+                    return LoopState(
+                        running=bool(row.get("running", False)),
+                        last_run=(
+                            datetime.fromisoformat(row["last_run"]) if row.get("last_run") else None
+                        ),
+                        last_symbol=row.get("last_symbol"),
+                        last_signal=row.get("last_signal"),
+                        last_action=row.get("last_action"),
+                        consecutive_buy_signals=int(row.get("consecutive_buy_signals", 0)),
+                        consecutive_sell_signals=int(row.get("consecutive_sell_signals", 0)),
+                        last_error=row.get("last_error"),
+                        iterations=int(row.get("iterations", 0)),
+                    )
+            except Exception as e:
+                logger.warning(f"LoopStateStore: Supabase load failed ({e}), trying SQLite")
 
-        import sqlite3
+        # 2. Fall back to SQLite
+        if self._db_initialized:
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT running, last_run, last_symbol, last_signal, last_action,
+                           consecutive_buy_signals, consecutive_sell_signals,
+                           last_error, iterations
+                    FROM loop_state WHERE id = 1
+                """)
+                row = cursor.fetchone()
+                conn.close()
 
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT running, last_run, last_symbol, last_signal, last_action,
-                       consecutive_buy_signals, consecutive_sell_signals,
-                       last_error, iterations
-                FROM loop_state WHERE id = 1
-            """)
-            row = cursor.fetchone()
-            conn.close()
+                if row is not None:
+                    return LoopState(
+                        running=bool(row[0]),
+                        last_run=datetime.fromisoformat(row[1]) if row[1] else None,
+                        last_symbol=row[2],
+                        last_signal=row[3],
+                        last_action=row[4],
+                        consecutive_buy_signals=row[5],
+                        consecutive_sell_signals=row[6],
+                        last_error=row[7],
+                        iterations=row[8],
+                    )
+            except Exception as e:
+                logger.warning(f"LoopStateStore: SQLite load failed ({e}), using in-memory")
+                fallback_state = self._in_memory if self._in_memory is not None else LoopState()
+                fallback_state.last_error = f"DB load failed: {e}"
+                return fallback_state
 
-            if row is None:
-                return LoopState()
-
-            return LoopState(
-                running=bool(row[0]),
-                last_run=datetime.fromisoformat(row[1]) if row[1] else None,
-                last_symbol=row[2],
-                last_signal=row[3],
-                last_action=row[4],
-                consecutive_buy_signals=row[5],
-                consecutive_sell_signals=row[6],
-                last_error=row[7],
-                iterations=row[8],
-            )
-        except Exception as e:
-            logger.error(f"Failed to load loop state from DB: {e}")
-            return LoopState(last_error=f"DB load failed: {e}")
+        # 3. Fall back to in-memory
+        if self._in_memory is None:
+            self._in_memory = LoopState()
+        return self._in_memory
 
     def save(self, state: LoopState) -> None:
-        """Persist state to SQLite."""
-        if not self._db_initialized:
-            return
+        """Persist state — tries Supabase first, then SQLite, then in-memory."""
+        last_run_str = state.last_run.isoformat() if state.last_run else None
 
-        import sqlite3
+        # 1. Try Supabase
+        if self._supabase is not None and self._supabase.is_connected():
+            try:
+                ok = self._supabase.save_loop_state(
+                    strategy_id=None,
+                    running=state.running,
+                    last_run=last_run_str,
+                    last_symbol=state.last_symbol,
+                    last_signal=state.last_signal,
+                    last_action=state.last_action,
+                    consecutive_buy_signals=state.consecutive_buy_signals,
+                    consecutive_sell_signals=state.consecutive_sell_signals,
+                    last_error=state.last_error,
+                    iterations=state.iterations,
+                )
+                if ok:
+                    return
+            except Exception as e:
+                logger.warning(f"LoopStateStore: Supabase save failed ({e}), trying SQLite")
 
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                UPDATE loop_state SET
-                    running = ?,
-                    last_run = ?,
-                    last_symbol = ?,
-                    last_signal = ?,
-                    last_action = ?,
-                    consecutive_buy_signals = ?,
-                    consecutive_sell_signals = ?,
-                    last_error = ?,
-                    iterations = ?
-                WHERE id = 1
-            """,
-                (
-                    int(state.running),
-                    state.last_run.isoformat() if state.last_run else None,
-                    state.last_symbol,
-                    state.last_signal,
-                    state.last_action,
-                    state.consecutive_buy_signals,
-                    state.consecutive_sell_signals,
-                    state.last_error,
-                    state.iterations,
-                ),
-            )
-            conn.commit()
-            conn.close()
-        except Exception as e:
-            logger.warning(f"Failed to persist loop state: {e}")
+        # 2. Fall back to SQLite
+        if self._db_initialized:
+            try:
+                conn = sqlite3.connect(self.db_path)
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    UPDATE loop_state SET
+                        running = ?,
+                        last_run = ?,
+                        last_symbol = ?,
+                        last_signal = ?,
+                        last_action = ?,
+                        consecutive_buy_signals = ?,
+                        consecutive_sell_signals = ?,
+                        last_error = ?,
+                        iterations = ?
+                    WHERE id = 1
+                """,
+                    (
+                        int(state.running),
+                        last_run_str,
+                        state.last_symbol,
+                        state.last_signal,
+                        state.last_action,
+                        state.consecutive_buy_signals,
+                        state.consecutive_sell_signals,
+                        state.last_error,
+                        state.iterations,
+                    ),
+                )
+                conn.commit()
+                conn.close()
+                return
+            except Exception as e:
+                logger.warning(f"LoopStateStore: SQLite save failed ({e}), using in-memory")
+
+        # 3. Fall back to in-memory
+        self._in_memory = state
