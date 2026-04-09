@@ -73,6 +73,7 @@ Thumbs.db
 *.tmp
 /data/
 *.sqlite
+*.db
 .vercel
 .env*.local
 .gstack/
