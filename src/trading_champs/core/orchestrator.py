@@ -9,7 +9,10 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from trading_champs.data.supabase_client import SupabaseClient
 
 from trading_champs.core.drift_detector import DriftDetector
 from trading_champs.core.drift_store import DriftStore
@@ -295,22 +298,27 @@ class StrategyLoop:
 
 
 class StrategyStateStore:
-    """Persists per-strategy StrategyState to SQLite.
+    """Persists per-strategy StrategyState to Supabase with SQLite/in-memory fallback.
 
-    Uses the same database file as OrchestratorConfig.db_path.
+    Priority: Supabase (primary) -> SQLite (fallback) -> in-memory (last resort).
     """
 
-    def __init__(self, db_path: str = ".loop_state.db"):
+    def __init__(
+        self,
+        db_path: str = ".loop_state.db",
+        supabase: Optional["SupabaseClient"] = None,
+    ):
         self._db_path = db_path
+        self._supabase = supabase
         self._lock = threading.Lock()
         self._db_initialized = False
+        self._in_memory: dict[str, StrategyState] = {}
         try:
             self._init_db()
             self._db_initialized = True
         except Exception as e:
             logger.warning(
-                f"StrategyStateStore[{db_path}]: SQLite unavailable ({e})"
-                " — running without persistence"
+                f"StrategyStateStore[{db_path}]: SQLite unavailable ({e})" " — using fallback"
             )
             self._db_initialized = False
 
@@ -329,62 +337,99 @@ class StrategyStateStore:
             conn.commit()
             conn.close()
 
+    def _default_state(self, strategy_id: str) -> StrategyState:
+        return StrategyState(
+            strategy_id=strategy_id,
+            stage="dry_run",
+            stage_entered_at=datetime.utcnow(),
+            current_metrics={},
+        )
+
     def load(self, strategy_id: str) -> StrategyState:
         """Load state for a strategy, returning defaults if not found."""
-        if not self._db_initialized:
-            return StrategyState(
-                strategy_id=strategy_id,
-                stage="dry_run",
-                stage_entered_at=datetime.utcnow(),
-                current_metrics={},
-            )
-        with self._lock:
-            conn = sqlite3.connect(self._db_path)
-            conn.row_factory = sqlite3.Row
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT * FROM strategy_state WHERE strategy_id = ?",
-                (strategy_id,),
-            )
-            row = cursor.fetchone()
-            conn.close()
+        # 1. Try Supabase
+        if self._supabase is not None and self._supabase.is_connected():
+            try:
+                row = self._supabase.get_strategy_state(strategy_id)
+                if row:
+                    return StrategyState(
+                        strategy_id=row["strategy_id"],
+                        stage=row["stage"],
+                        stage_entered_at=datetime.fromisoformat(row["stage_entered_at"]),
+                        current_metrics=row.get("current_metrics", {}),
+                    )
+            except Exception as e:
+                logger.warning(f"StrategyStateStore: Supabase load failed ({e}), trying SQLite")
 
-            if row is None:
-                return StrategyState(
-                    strategy_id=strategy_id,
-                    stage="dry_run",
-                    stage_entered_at=datetime.utcnow(),
-                    current_metrics={},
-                )
+        # 2. Fall back to SQLite
+        if self._db_initialized:
+            try:
+                with self._lock:
+                    conn = sqlite3.connect(self._db_path)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT * FROM strategy_state WHERE strategy_id = ?",
+                        (strategy_id,),
+                    )
+                    row = cursor.fetchone()
+                    conn.close()
 
-            return StrategyState(
-                strategy_id=row["strategy_id"],
-                stage=row["stage"],
-                stage_entered_at=datetime.fromisoformat(row["stage_entered_at"]),
-                current_metrics=json.loads(row["current_metrics"]),
-            )
+                    if row is not None:
+                        return StrategyState(
+                            strategy_id=row["strategy_id"],
+                            stage=row["stage"],
+                            stage_entered_at=datetime.fromisoformat(row["stage_entered_at"]),
+                            current_metrics=json.loads(row["current_metrics"]),
+                        )
+            except Exception as e:
+                logger.warning(f"StrategyStateStore: SQLite load failed ({e}), using in-memory")
+
+        # 3. Fall back to in-memory
+        return self._in_memory.get(strategy_id) or self._default_state(strategy_id)
 
     def save(self, state: StrategyState) -> None:
-        """Persist strategy state to SQLite."""
-        if not self._db_initialized:
-            return
-        with self._lock:
-            conn = sqlite3.connect(self._db_path)
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO strategy_state
-                (strategy_id, stage, stage_entered_at, current_metrics)
-                VALUES (?, ?, ?, ?)
-                """,
-                (
-                    state.strategy_id,
-                    state.stage,
-                    state.stage_entered_at.isoformat(),
-                    json.dumps(state.current_metrics),
-                ),
-            )
-            conn.commit()
-            conn.close()
+        """Persist strategy state to Supabase first, then SQLite."""
+        # 1. Try Supabase
+        if self._supabase is not None and self._supabase.is_connected():
+            try:
+                ok = self._supabase.save_strategy_state(
+                    strategy_id=state.strategy_id,
+                    stage=state.stage,
+                    stage_entered_at=state.stage_entered_at.isoformat(),
+                    current_metrics=state.current_metrics,
+                )
+                if ok:
+                    return
+            except Exception as e:
+                logger.warning(f"StrategyStateStore: Supabase save failed ({e}), trying SQLite")
+
+        # 2. Fall back to SQLite
+        if self._db_initialized:
+            try:
+                with self._lock:
+                    conn = sqlite3.connect(self._db_path)
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO strategy_state
+                        (strategy_id, stage, stage_entered_at, current_metrics)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (
+                            state.strategy_id,
+                            state.stage,
+                            state.stage_entered_at.isoformat(),
+                            json.dumps(state.current_metrics),
+                        ),
+                    )
+                    conn.commit()
+                    conn.close()
+                return
+            except Exception as e:
+                logger.warning(f"StrategyStateStore: SQLite save failed ({e}), using in-memory")
+
+        # 3. Fall back to in-memory
+        self._in_memory[state.strategy_id] = state
 
 
 class StrategyOrchestrator:
@@ -405,6 +450,7 @@ class StrategyOrchestrator:
         config: Optional[OrchestratorConfig] = None,
         evaluate_mode: bool = False,
         strategy_defaults: Optional[dict] = None,
+        supabase: Optional["SupabaseClient"] = None,
     ):
         """Initialize the orchestrator.
 
@@ -415,15 +461,22 @@ class StrategyOrchestrator:
             evaluate_mode: If True, evaluate gates but do NOT trigger transitions.
             strategy_defaults: Field overrides applied to each auto-created config
                 (e.g. {'symbols': ['BTC/USDT'], 'timeframe': '4h'}).
+            supabase: Supabase client for state persistence across cold starts.
         """
         self._config = config or OrchestratorConfig()
         self._evaluate_mode = evaluate_mode
 
         # State store for per-strategy state
-        self._state_store = StrategyStateStore(db_path=self._config.db_path)
+        self._state_store = StrategyStateStore(
+            db_path=self._config.db_path,
+            supabase=supabase,
+        )
 
         # Stage history
-        self._stage_history = StageHistory(db_path=self._config.db_path)
+        self._stage_history = StageHistory(
+            db_path=self._config.db_path,
+            supabase=supabase,
+        )
 
         # Stage evaluator
         self._evaluator = StageEvaluator(

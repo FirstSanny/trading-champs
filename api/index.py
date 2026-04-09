@@ -371,9 +371,16 @@ def get_loop() -> TradingLoop:
             slow_ma_period=int(os.environ.get("LOOP_SLOW_MA", "50")),
             mode=os.environ.get("LOOP_MODE", "paper"),
         )
+        supabase_client: Optional[SupabaseClient] = None
+        try:
+            supabase_client = get_supabase_client()
+        except Exception:
+            pass
+        state_store = LoopStateStore(supabase=supabase_client)
         _loop_instance = TradingLoop(
             config=config,
             tracker=tracker,
+            state_store=state_store,
         )
     return _loop_instance
 
@@ -705,11 +712,18 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                     defaults=per_strategy_defaults,
                 )
 
+                supabase_client: Optional[SupabaseClient] = None
+                try:
+                    supabase_client = get_supabase_client()
+                except Exception:
+                    pass
+
                 _orchestrator = StrategyOrchestrator(
                     strategies=strategy_configs,
                     config=OrchestratorConfig(
                         watchlist_repository=_get_watchlist_repo(),
                     ),
+                    supabase=supabase_client,
                 )
     return _orchestrator
 

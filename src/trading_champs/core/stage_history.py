@@ -1,5 +1,7 @@
 """Append-only stage transition history for per-strategy pipelines."""
 
+from __future__ import annotations
+
 import json
 import logging
 import sqlite3
@@ -7,9 +9,12 @@ import threading
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from trading_champs.data.supabase_client import SupabaseClient
 
 
 @dataclass(frozen=True)
@@ -29,28 +34,33 @@ class StageTransition:
 class StageHistory:
     """Append-only log of stage transitions for all strategies.
 
-    Stored in SQLite alongside existing loop state.
+    Priority: Supabase (primary) -> SQLite (fallback) -> in-memory (last resort).
     """
 
     _local = threading.local()
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(
+        self,
+        db_path: Optional[str] = None,
+        supabase: Optional["SupabaseClient"] = None,
+    ):
         """Initialize StageHistory.
 
         Args:
             db_path: Path to SQLite database. Defaults to .loop_state.db in project root.
+            supabase: Optional Supabase client for cloud persistence.
         """
         if db_path is None:
             db_path = str(Path(__file__).parent.parent.parent / ".loop_state.db")
         self._db_path = db_path
+        self._supabase = supabase
         self._db_initialized = False
+        self._in_memory: list[StageTransition] = []
         try:
             self._init_db()
             self._db_initialized = True
         except Exception as e:
-            logger.warning(
-                f"StageHistory[{db_path}]: SQLite unavailable ({e}) — running without persistence"
-            )
+            logger.warning(f"StageHistory[{db_path}]: SQLite unavailable ({e}) — using fallback")
             self._db_initialized = False
 
     def _get_conn(self) -> sqlite3.Connection:
@@ -89,57 +99,109 @@ class StageHistory:
 
     def append(self, transition: StageTransition) -> None:
         """Append a stage transition to the log."""
-        if not self._db_initialized:
-            return
-        conn = self._get_conn()
-        conn.execute(
-            """
-            INSERT INTO stage_history
-            (strategy_id, from_stage, to_stage, trigger, metrics_snapshot,
-             timestamp, actor, override_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                transition.strategy_id,
-                transition.from_stage,
-                transition.to_stage,
-                transition.trigger,
-                json.dumps(transition.metrics_snapshot),
-                transition.timestamp,
-                transition.actor,
-                transition.override_reason,
-            ),
-        )
-        conn.commit()
+        # 1. Try Supabase
+        if self._supabase is not None and self._supabase.is_connected():
+            try:
+                ok = self._supabase.append_stage_history(
+                    strategy_id=transition.strategy_id,
+                    from_stage=transition.from_stage,
+                    to_stage=transition.to_stage,
+                    trigger=transition.trigger,
+                    metrics_snapshot=transition.metrics_snapshot,
+                    timestamp=transition.timestamp,
+                    actor=transition.actor,
+                    override_reason=transition.override_reason,
+                )
+                if ok:
+                    return
+            except Exception as e:
+                logger.warning(f"StageHistory: Supabase append failed ({e}), trying SQLite")
+
+        # 2. Fall back to SQLite
+        if self._db_initialized:
+            try:
+                conn = self._get_conn()
+                conn.execute(
+                    """
+                    INSERT INTO stage_history
+                    (strategy_id, from_stage, to_stage, trigger, metrics_snapshot,
+                     timestamp, actor, override_reason)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        transition.strategy_id,
+                        transition.from_stage,
+                        transition.to_stage,
+                        transition.trigger,
+                        json.dumps(transition.metrics_snapshot),
+                        transition.timestamp,
+                        transition.actor,
+                        transition.override_reason,
+                    ),
+                )
+                conn.commit()
+                return
+            except Exception as e:
+                logger.warning(f"StageHistory: SQLite append failed ({e}), using in-memory")
+
+        # 3. Fall back to in-memory
+        self._in_memory.append(transition)
 
     def get_history(self, strategy_id: str, limit: int = 50) -> list[StageTransition]:
         """Get stage transition history for a strategy."""
-        if not self._db_initialized:
-            return []
-        conn = self._get_conn()
-        rows = conn.execute(
-            """
-            SELECT * FROM stage_history
-            WHERE strategy_id = ?
-            ORDER BY timestamp ASC
-            LIMIT ?
-            """,
-            (strategy_id, limit),
-        ).fetchall()
+        # 1. Try Supabase
+        if self._supabase is not None and self._supabase.is_connected():
+            try:
+                rows = self._supabase.get_stage_history(strategy_id, limit=limit)
+                if rows:
+                    return [
+                        StageTransition(
+                            strategy_id=r["strategy_id"],
+                            from_stage=r["from_stage"],
+                            to_stage=r["to_stage"],
+                            trigger=r["trigger"],
+                            metrics_snapshot=r["metrics_snapshot"],
+                            timestamp=r["timestamp"],
+                            actor=r["actor"],
+                            override_reason=r.get("override_reason"),
+                        )
+                        for r in rows
+                    ]
+            except Exception as e:
+                logger.warning(f"StageHistory: Supabase get_history failed ({e}), trying SQLite")
 
-        return [
-            StageTransition(
-                strategy_id=row["strategy_id"],
-                from_stage=row["from_stage"],
-                to_stage=row["to_stage"],
-                trigger=row["trigger"],
-                metrics_snapshot=json.loads(row["metrics_snapshot"]),
-                timestamp=row["timestamp"],
-                actor=row["actor"],
-                override_reason=row["override_reason"],
-            )
-            for row in rows
-        ]
+        # 2. Fall back to SQLite
+        if self._db_initialized:
+            try:
+                conn = self._get_conn()
+                rows = conn.execute(
+                    """
+                    SELECT * FROM stage_history
+                    WHERE strategy_id = ?
+                    ORDER BY timestamp ASC
+                    LIMIT ?
+                    """,
+                    (strategy_id, limit),
+                ).fetchall()
+
+                return [
+                    StageTransition(
+                        strategy_id=row["strategy_id"],
+                        from_stage=row["from_stage"],
+                        to_stage=row["to_stage"],
+                        trigger=row["trigger"],
+                        metrics_snapshot=json.loads(row["metrics_snapshot"]),
+                        timestamp=row["timestamp"],
+                        actor=row["actor"],
+                        override_reason=row["override_reason"],
+                    )
+                    for row in rows
+                ]
+            except Exception as e:
+                logger.warning(f"StageHistory: SQLite get_history failed ({e}), using in-memory")
+
+        # 3. Fall back to in-memory
+        return [t for t in self._in_memory if t.strategy_id == strategy_id][:limit]
 
     def get_latest_stage(self, strategy_id: str) -> Optional[str]:
         """Get the most recent stage for a strategy.
@@ -150,19 +212,39 @@ class StageHistory:
         Returns:
             The current stage name, or None if no history.
         """
-        if not self._db_initialized:
-            return None
-        conn = self._get_conn()
-        row = conn.execute(
-            """
-            SELECT to_stage FROM stage_history
-            WHERE strategy_id = ?
-            ORDER BY timestamp DESC
-            LIMIT 1
-            """,
-            (strategy_id,),
-        ).fetchone()
-        return row["to_stage"] if row else None
+        # 1. Try Supabase
+        if self._supabase is not None and self._supabase.is_connected():
+            try:
+                rows = self._supabase.get_stage_history(strategy_id, limit=1)
+                if rows:
+                    return rows[-1]["to_stage"]
+            except Exception as e:
+                logger.warning(
+                    f"StageHistory: Supabase get_latest_stage failed ({e}), trying SQLite"
+                )
+
+        # 2. Fall back to SQLite
+        if self._db_initialized:
+            try:
+                conn = self._get_conn()
+                row = conn.execute(
+                    """
+                    SELECT to_stage FROM stage_history
+                    WHERE strategy_id = ?
+                    ORDER BY timestamp DESC
+                    LIMIT 1
+                    """,
+                    (strategy_id,),
+                ).fetchone()
+                return row["to_stage"] if row else None
+            except Exception as e:
+                logger.warning(
+                    f"StageHistory: SQLite get_latest_stage failed ({e}), using in-memory"
+                )
+
+        # 3. Fall back to in-memory
+        matching = [t for t in self._in_memory if t.strategy_id == strategy_id]
+        return matching[-1].to_stage if matching else None
 
     def log_transition(
         self,

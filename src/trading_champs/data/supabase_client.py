@@ -72,6 +72,7 @@ class SupabaseClient:
         path: str,
         json: dict | None = None,
         params: dict | None = None,
+        prefer_service_key: bool = False,
     ) -> dict | list | None:
         """Make a request to Supabase REST API.
 
@@ -80,6 +81,7 @@ class SupabaseClient:
             path: API path (e.g., "/trades")
             json: JSON body for POST/PATCH/DELETE
             params: Query parameters
+            prefer_service_key: Use service key for auth (for write operations)
 
         Returns:
             Response data or None
@@ -90,9 +92,10 @@ class SupabaseClient:
             raise ConnectionError("Supabase not connected")
 
         url = f"{self.url}/rest/v1{path}"
+        use_key = self.service_key if prefer_service_key else self.anon_key
         headers = {
-            "apikey": self.anon_key,
-            "Authorization": f"Bearer {self.anon_key}",
+            "apikey": use_key,
+            "Authorization": f"Bearer {use_key}",
             "Content-Type": "application/json",
             "Prefer": "return=representation",
         }
@@ -301,6 +304,166 @@ class SupabaseClient:
         except Exception as e:
             logger.error(f"Failed to get latest balance from Supabase: {e}")
             return None
+
+    # -------------------------------------------------------------------------
+    # Loop state persistence
+    # -------------------------------------------------------------------------
+
+    def save_loop_state(
+        self,
+        strategy_id: str | None,
+        running: bool,
+        last_run: str | None,
+        last_symbol: str | None,
+        last_signal: str | None,
+        last_action: str | None,
+        consecutive_buy_signals: int,
+        consecutive_sell_signals: int,
+        last_error: str | None,
+        iterations: int,
+    ) -> bool:
+        """Upsert a loop state row."""
+        data = {
+            "id": 1,
+            "strategy_id": strategy_id,
+            "running": running,
+            "last_run": last_run,
+            "last_symbol": last_symbol,
+            "last_signal": last_signal,
+            "last_action": last_action,
+            "consecutive_buy_signals": consecutive_buy_signals,
+            "consecutive_sell_signals": consecutive_sell_signals,
+            "last_error": last_error,
+            "iterations": iterations,
+        }
+        result = self._request(
+            "POST",
+            "/loop_state",
+            json=data,
+            params={"strategy_id": f"eq.{strategy_id}"},
+            prefer_service_key=True,
+        )
+        if result is None:
+            result = self._request(
+                "PATCH",
+                "/loop_state",
+                json=data,
+                params={"strategy_id": f"eq.{strategy_id}"},
+                prefer_service_key=True,
+            )
+        return result is not None
+
+    def get_loop_state(self, strategy_id: str | None) -> dict | None:
+        """Get loop state row by strategy_id (null for global loop state)."""
+        try:
+            params: dict[str, str] = {"limit": "1", "order": "updated_at.desc"}
+            if strategy_id is not None:
+                params["strategy_id"] = f"eq.{strategy_id}"
+            result = self._request("GET", "/loop_state", params=params)
+            if isinstance(result, list) and len(result) > 0:
+                return cast("dict[Any, Any]", result[0])
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get loop state from Supabase: {e}")
+            return None
+
+    # -------------------------------------------------------------------------
+    # Strategy state persistence
+    # -------------------------------------------------------------------------
+
+    def save_strategy_state(
+        self,
+        strategy_id: str,
+        stage: str,
+        stage_entered_at: str,
+        current_metrics: dict,
+    ) -> bool:
+        """Upsert a strategy state row."""
+        data = {
+            "strategy_id": strategy_id,
+            "stage": stage,
+            "stage_entered_at": stage_entered_at,
+            "current_metrics": current_metrics,
+        }
+        result = self._request(
+            "POST",
+            "/strategy_state",
+            json=data,
+            params={"strategy_id": f"eq.{strategy_id}"},
+            prefer_service_key=True,
+        )
+        if result is None:
+            result = self._request(
+                "PATCH",
+                "/strategy_state",
+                json=data,
+                params={"strategy_id": f"eq.{strategy_id}"},
+                prefer_service_key=True,
+            )
+        return result is not None
+
+    def get_strategy_state(self, strategy_id: str) -> dict | None:
+        """Get strategy state by strategy_id."""
+        try:
+            result = self._request(
+                "GET",
+                "/strategy_state",
+                params={"strategy_id": f"eq.{strategy_id}", "limit": "1"},
+            )
+            if isinstance(result, list) and len(result) > 0:
+                return cast("dict[Any, Any]", result[0])
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get strategy state from Supabase: {e}")
+            return None
+
+    # -------------------------------------------------------------------------
+    # Stage history persistence
+    # -------------------------------------------------------------------------
+
+    def append_stage_history(
+        self,
+        strategy_id: str,
+        from_stage: str,
+        to_stage: str,
+        trigger: str,
+        metrics_snapshot: dict,
+        timestamp: str,
+        actor: str,
+        override_reason: str | None = None,
+    ) -> bool:
+        """Append a stage transition record."""
+        data = {
+            "strategy_id": strategy_id,
+            "from_stage": from_stage,
+            "to_stage": to_stage,
+            "trigger": trigger,
+            "metrics_snapshot": metrics_snapshot,
+            "timestamp": timestamp,
+            "actor": actor,
+            "override_reason": override_reason,
+        }
+        result = self._request("POST", "/stage_history", json=data, prefer_service_key=True)
+        return result is not None
+
+    def get_stage_history(self, strategy_id: str, limit: int = 50) -> list[dict]:
+        """Get stage history for a strategy ordered by timestamp ASC."""
+        try:
+            result = self._request(
+                "GET",
+                "/stage_history",
+                params={
+                    "strategy_id": f"eq.{strategy_id}",
+                    "order": "timestamp.asc",
+                    "limit": str(limit),
+                },
+            )
+            if isinstance(result, list):
+                return result
+            return []
+        except Exception as e:
+            logger.error(f"Failed to get stage history from Supabase: {e}")
+            return []
 
 
 # Singleton instance
