@@ -325,6 +325,9 @@ class TradingLoop:
         lock = RedisDistributedLock(redis_url=redis_url, lock_ttl_seconds=lock_ttl)
 
         if not lock.acquire(idempotency_key):
+            logger.warning(
+                f"Iterate SKIPPED — another instance running. idempotency_key={idempotency_key}"
+            )
             _metrics.iterate_cycle_total.labels(status="skipped").inc()
             return {
                 "status": "skipped",
