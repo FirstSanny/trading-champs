@@ -105,6 +105,7 @@ class OrchestratorConfig:
     redis_url: str = "redis://localhost:6379/0"
     lock_ttl_seconds: int = 120
     watchlist_repository: Any = None  # WatchlistRepository instance, or None to skip
+    conviction_threshold: float = 0.5  # Fraction of strategies that must agree to execute (0.0-1.0)
 
 
 class StrategyLoop:
@@ -465,6 +466,7 @@ class StrategyOrchestrator:
         """
         self._config = config or OrchestratorConfig()
         self._evaluate_mode = evaluate_mode
+        self._conviction_threshold = self._config.conviction_threshold
 
         # State store for per-strategy state
         self._state_store = StrategyStateStore(
@@ -543,15 +545,15 @@ class StrategyOrchestrator:
         if not symbols:
             return
 
-        # Round-robin distribution across strategy loops
+        # Broadcast all symbols to ALL strategy loops (conviction trading)
+        # Every strategy analyzes every symbol — conviction is evaluated across strategies
         loops = list(self._strategy_loops.values())
-        for i, symbol in enumerate(symbols):
-            loop = loops[i % len(loops)]
-            loop.config.symbols = [symbol]
-            loop.loop.config.symbols = [symbol]
+        for loop in loops:
+            loop.config.symbols = symbols
+            loop.loop.config.symbols = symbols
 
         logger.debug(
-            "Watchlist: %d symbols distributed across %d strategy loops",
+            "Watchlist: broadcast %d symbols to all %d strategy loops",
             len(symbols),
             len(loops),
         )
@@ -570,6 +572,8 @@ class StrategyOrchestrator:
             logger.warning("Watchlist refresh failed, continuing with env symbols: %s", e)
 
         # Run all strategy iterations in parallel via ThreadPoolExecutor
+        # skip_execution=True so we collect signals without executing trades;
+        # conviction aggregation below decides what actually executes
         def run_strategy(
             strategy_id: str, strategy_loop: StrategyLoop
         ) -> tuple[str, dict[str, Any]]:
@@ -578,7 +582,7 @@ class StrategyOrchestrator:
                 current_fraction = strategy_loop.config.stage_config.capital_fraction
                 strategy_loop.loop.config.position_size_fraction = current_fraction
 
-                result = strategy_loop.iterate()
+                result = strategy_loop.iterate(skip_execution=True)
                 return strategy_id, result
             except Exception as e:
                 logger.error(f"Strategy {strategy_id} error in iterate_all: {e}")
@@ -617,6 +621,110 @@ class StrategyOrchestrator:
                     "strategy_id": sid,
                     "error": "iterate timed out after 45s total",
                 }
+
+        # Aggregate signals per symbol across all strategies for conviction evaluation
+        symbol_signal_counts: dict[str, dict[str, int]] = {}
+        num_strategies = len(self._strategy_loops)
+        for strategy_id, strat_result in results["strategies"].items():
+            if strat_result.get("status") == "error":
+                continue
+            for sig_entry in strat_result.get("signals", []):
+                sym = sig_entry.get("symbol")
+                sig = sig_entry.get("signal")
+                if sym and sig:
+                    if sym not in symbol_signal_counts:
+                        symbol_signal_counts[sym] = {"BUY": 0, "HOLD": 0, "SELL": 0}
+                    if sig in symbol_signal_counts[sym]:
+                        symbol_signal_counts[sym][sig] += 1
+
+        # Evaluate conviction: execute BUY if threshold of strategies agree
+        conviction_trades: list[dict] = []
+        threshold_count = int(self._conviction_threshold * num_strategies)
+        # Require at least 2 strategies to agree (avoids 1-strategy conviction on small num_strategies)
+        min_required = max(2, threshold_count)
+
+        for sym, counts in symbol_signal_counts.items():
+            if counts["BUY"] >= min_required:
+                conviction_trades.append({
+                    "symbol": sym,
+                    "signal": "BUY",
+                    "conviction_count": counts["BUY"],
+                    "total_strategies": num_strategies,
+                    "all_counts": counts,
+                })
+                logger.info(
+                    f"Conviction met for {sym}: {counts['BUY']}/{num_strategies} strategies "
+                    f"(threshold={min_required}) — will execute BUY"
+                )
+
+        # Execute conviction trades using the first strategy loop's executor
+        # (all strategies share the same Alpaca account, so shared connector is safe)
+        results["conviction"] = {
+            "threshold": self._conviction_threshold,
+            "threshold_count": min_required,
+            "num_strategies": num_strategies,
+            "symbol_counts": symbol_signal_counts,
+            "trades": [],
+        }
+
+        if conviction_trades:
+            first_loop = next(iter(self._strategy_loops.values()))
+            conviction_executor = first_loop.loop.executor
+
+            for trade in conviction_trades:
+                sym = trade["symbol"]
+                try:
+                    # Get latest price from the first strategy's signals
+                    latest_price = None
+                    for sid, sres in results["strategies"].items():
+                        for sent in sres.get("signals", []):
+                            if sent.get("symbol") == sym:
+                                latest_price = sent.get("price")
+                                break
+                        if latest_price:
+                            break
+
+                    if latest_price is None:
+                        logger.warning(f"No price found for {sym} — skipping conviction execute")
+                        continue
+
+                    # Check position not already open
+                    if conviction_executor.has_position(sym):
+                        logger.info(f"Conviction BUY for {sym} skipped — position already open")
+                        continue
+
+                    # Calculate position size
+                    position_size = first_loop.loop._calculate_position_size(latest_price)
+                    if position_size <= 0:
+                        logger.info(f"Conviction BUY for {sym} skipped — zero position size")
+                        continue
+
+                    # Execute conviction BUY directly via the shared executor
+                    exec_result = conviction_executor.open_long(
+                        symbol=sym,
+                        qty=position_size,
+                        tracker=first_loop.tracker,
+                        strategy="conviction",
+                        order_type="market",
+                        limit_price=latest_price,
+                    )
+                    results["conviction"]["trades"].append({
+                        "symbol": sym,
+                        "qty": position_size,
+                        "price": latest_price,
+                        "status": exec_result.status.value,
+                        "conviction_count": trade["conviction_count"],
+                    })
+                    logger.info(
+                        f"Conviction BUY executed for {sym}: qty={position_size}, "
+                        f"price={latest_price}, status={exec_result.status.value}"
+                    )
+                except Exception as e:
+                    logger.error(f"Conviction execute failed for {sym}: {e}")
+                    results["conviction"]["trades"].append({
+                        "symbol": sym,
+                        "error": str(e),
+                    })
 
         # Update stages from state store (sequential — DB writes)
         for strategy_id, strategy_loop in self._strategy_loops.items():

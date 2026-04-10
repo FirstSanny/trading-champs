@@ -302,6 +302,7 @@ class TradingLoop:
         self,
         idempotency_key: str | None = None,
         drift_detector: Any = None,
+        skip_execution: bool = False,
     ) -> dict[str, Any]:
         """Run one iteration of the trading loop.
 
@@ -311,6 +312,9 @@ class TradingLoop:
                              same key will return 409.
             drift_detector: Optional DriftDetector to record dry_run fills for
                             drift detection (used in dry_run mode only).
+            skip_execution: If True, generate signals but do NOT execute any
+                            trades. Used for conviction aggregation where we
+                            collect signals from all strategies before trading.
 
         Returns:
             Dict describing what happened this iteration.
@@ -337,11 +341,11 @@ class TradingLoop:
             }
 
         try:
-            return self._iterate_impl(drift_detector=drift_detector)
+            return self._iterate_impl(drift_detector=drift_detector, skip_execution=skip_execution)
         finally:
             lock.release(idempotency_key)
 
-    def _iterate_impl(self, drift_detector: Any = None) -> dict[str, Any]:
+    def _iterate_impl(self, drift_detector: Any = None, skip_execution: bool = False) -> dict[str, Any]:
         """Internal iterate implementation (called after lock acquired)."""
         result: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
@@ -395,41 +399,53 @@ class TradingLoop:
 
                 # 4. Check if we should enter
                 if self._should_enter(signal, symbol):
-                    position_size = self._calculate_position_size(latest_price)
-                    if position_size <= 0:
+                    if skip_execution:
                         result["actions"].append(
                             {
-                                "type": "skip",
+                                "type": "enter_candidate",
                                 "symbol": symbol,
-                                "reason": "position_size_zero",
+                                "signal": signal_str,
                                 "price": latest_price,
+                                "reason": "skipping_execution_for_conviction",
                             }
                         )
-                        self.state.record_iteration(symbol, signal_str, "skipped:zero_size")
-                        continue
+                        self.state.record_iteration(symbol, signal_str, "candidate:conviction")
+                    else:
+                        position_size = self._calculate_position_size(latest_price)
+                        if position_size <= 0:
+                            result["actions"].append(
+                                {
+                                    "type": "skip",
+                                    "symbol": symbol,
+                                    "reason": "position_size_zero",
+                                    "price": latest_price,
+                                }
+                            )
+                            self.state.record_iteration(symbol, signal_str, "skipped:zero_size")
+                            continue
 
-                    exec_result = self._execute_with_retry(
-                        _Action(
-                            action_type="open",
-                            symbol=symbol,
-                            qty=position_size,
-                            strategy=self.config.strategy,
-                            limit_price=latest_price,
+                        exec_result = self._execute_with_retry(
+                            _Action(
+                                action_type="open",
+                                symbol=symbol,
+                                qty=position_size,
+                                strategy=self.config.strategy,
+                                limit_price=latest_price,
+                            )
                         )
-                    )
-                    result["actions"].append(
-                        {
-                            "type": "enter",
-                            "symbol": symbol,
-                            "signal": signal_str,
-                            "qty": position_size,
-                            "price": latest_price,
-                            "status": exec_result.status.value,
-                        }
-                    )
-                    self.state.record_iteration(
-                        symbol, signal_str, f"entered:{exec_result.status.value}"
-                    )
+                        result["actions"].append(
+                            {
+                                "type": "enter",
+                                "symbol": symbol,
+                                "signal": signal_str,
+                                "qty": position_size,
+                                "price": latest_price,
+                                "status": exec_result.status.value,
+                            }
+                        )
+                        self.state.record_iteration(
+                            symbol, signal_str, f"entered:{exec_result.status.value}"
+                        )
                 else:
                     self.state.record_iteration(symbol, signal_str, "no_action")
 
