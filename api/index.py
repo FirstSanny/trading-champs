@@ -683,16 +683,20 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                     StrategyOrchestrator,
                 )
                 from trading_champs.signals.strategies import (
+                    DATA_STRATEGY_REGISTRY,
                     STRATEGY_REGISTRY,
                     create_orchestrator_configs,
                 )
 
-                strategy_ids = list(STRATEGY_REGISTRY.keys())
+                # Total count: price-series + data-driven strategies
+                all_strategy_count = len(STRATEGY_REGISTRY) + len(DATA_STRATEGY_REGISTRY)
 
-                # Per-strategy symbols: round-robin assign ORCHESTRATOR_SYMBOLS across registry keys
+                # Per-strategy symbols: round-robin assign ORCHESTRATOR_SYMBOLS across all strategies
                 symbols_raw = os.environ.get("ORCHESTRATOR_SYMBOLS", "BTC/USDT")
                 symbols_list = [s.strip() for s in symbols_raw.split(",") if s.strip()]
-                per_symbol = [symbols_list[i % len(symbols_list)] for i in range(len(strategy_ids))]
+                per_symbol = [
+                    symbols_list[i % len(symbols_list)] for i in range(all_strategy_count)
+                ]
 
                 # Per-strategy overrides (list form for per-key values)
                 per_strategy_defaults: list[dict] = [
@@ -704,7 +708,7 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                         ),
                         "exec_connector": os.environ.get("ORCHESTRATOR_EXEC_CONNECTOR", "alpaca"),
                     }
-                    for i in range(len(strategy_ids))
+                    for i in range(all_strategy_count)
                 ]
 
                 strategy_configs = create_orchestrator_configs(

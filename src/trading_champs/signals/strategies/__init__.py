@@ -46,20 +46,25 @@ def create_orchestrator_configs(
             - A list of dicts: one per registry key, in order (e.g. for per-strategy symbols).
 
     Returns:
-        List of StrategyLoopConfig instances, one per STRATEGY_REGISTRY entry.
+        List of StrategyLoopConfig instances, one per STRATEGY_REGISTRY entry
+        and one per DATA_STRATEGY_REGISTRY entry.
     """
-    registry_keys = list(STRATEGY_REGISTRY.keys())
+    all_keys: list[tuple[str, str]] = [
+        (key, "price_series") for key in STRATEGY_REGISTRY
+    ] + [
+        (key, "data_driven") for key in DATA_STRATEGY_REGISTRY
+    ]
 
     # Normalize defaults to list form
     if defaults is None:
-        per_strategy: list[dict] = [{} for _ in registry_keys]
+        per_strategy: list[dict] = [{} for _ in all_keys]
     elif isinstance(defaults, dict):
-        per_strategy = [defaults for _ in registry_keys]
+        per_strategy = [defaults for _ in all_keys]
     else:
         per_strategy = list(defaults)
 
-    # Pad with empty dicts if list is shorter than registry keys
-    while len(per_strategy) < len(registry_keys):
+    # Pad with empty dicts if list is shorter than all_keys
+    while len(per_strategy) < len(all_keys):
         per_strategy.append({})
 
     return [
@@ -67,10 +72,11 @@ def create_orchestrator_configs(
             strategy_id=key,
             strategy_name=key.replace("_", " ").title(),
             strategy=key,
+            strategy_type=strategy_type,
             stage="dry_run",
             **per_strategy[i],
         )
-        for i, key in enumerate(registry_keys)
+        for i, (key, strategy_type) in enumerate(all_keys)
     ]
 
 
