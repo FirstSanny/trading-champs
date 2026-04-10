@@ -881,8 +881,16 @@ async def strategy_orchestrator_iterate(request: Request) -> JSONResponse:
         status_code = 409 if result.get("status") == "skipped" else 200
         return JSONResponse(content=result, status_code=status_code)
     except Exception as e:
+        import traceback
+
+        tb = traceback.format_exc()
+        logger.error(f"[/api/orchestrator/iterate] UNHANDLED ERROR: {e}\n{tb}")
         return JSONResponse(
-            content={"error": str(e), "timestamp": datetime.now().isoformat()},
+            content={
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "timestamp": datetime.now().isoformat(),
+            },
             status_code=500,
         )
 
