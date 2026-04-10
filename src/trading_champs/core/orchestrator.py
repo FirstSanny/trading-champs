@@ -40,7 +40,6 @@ class StrategyLoopConfig:
     # Inherits all LoopConfig fields
     symbols: list[str] = field(default_factory=lambda: ["BTC/USDT"])
     strategy: str = "ma_crossover"
-    strategy_type: str = "price_series"  # "price_series" or "data_driven"
     interval_seconds: int = 60
     position_size_fraction: float = 0.1
     max_positions: int = 1
@@ -160,16 +159,6 @@ class StrategyLoop:
 
     def iterate(self) -> dict[str, Any]:
         """Run one iteration of this strategy's loop."""
-        # Data-driven strategies require a different execution path (async/fetcher-based)
-        # and cannot run in the TradingLoop price-series paradigm.
-        if self.config.strategy_type == "data_driven":
-            return {
-                "status": "skipped",
-                "reason": "data_driven_strategy",
-                "strategy_id": self.config.strategy_id,
-                "message": "Data-driven strategies use a separate execution path.",
-            }
-
         try:
             result = self.loop.iterate(
                 idempotency_key=f"orchestrator_{self.config.strategy_id}",
@@ -451,9 +440,8 @@ class StrategyOrchestrator:
     strategy and logs transitions to StageHistory.
 
     If no strategies list is provided, automatically creates one StrategyLoopConfig
-    per entry in STRATEGY_REGISTRY and DATA_STRATEGY_REGISTRY
-    (signals/strategies/__init__.py), each starting at dry_run stage.
-    STRATEGY_REGISTRY and DATA_STRATEGY_REGISTRY are the combined source of truth.
+    per entry in STRATEGY_REGISTRY (signals/strategies/__init__.py), each starting
+    at dry_run stage. STRATEGY_REGISTRY is the single source of truth.
     """
 
     def __init__(
