@@ -874,6 +874,7 @@ async def strategy_orchestrator_iterate(request: Request) -> JSONResponse:
     if (err_resp := auth_guard(request)) is not None:
         return err_resp
     idempotency_key = request.headers.get("x-idempotency-key")
+    logger.info(f"[/api/orchestrator/iterate] idempotency_key={idempotency_key}")
     orchestrator = get_orchestrator()
     try:
         result = orchestrator.iterate_all(idempotency_key=idempotency_key)
