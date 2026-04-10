@@ -640,7 +640,8 @@ class StrategyOrchestrator:
         # Evaluate conviction: execute BUY if threshold of strategies agree
         conviction_trades: list[dict] = []
         threshold_count = int(self._conviction_threshold * num_strategies)
-        # Require at least 2 strategies to agree (avoids 1-strategy conviction on small num_strategies)
+        # Require at least 2 strategies to agree
+        # (avoids 1-strategy conviction on small num_strategies)
         min_required = max(2, threshold_count)
 
         for sym, counts in symbol_signal_counts.items():
