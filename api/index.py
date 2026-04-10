@@ -1,6 +1,7 @@
 """Vercel serverless function for Trading Champs Dashboard using Starlette ASGI."""
 
 import json
+import logging
 import os
 import sys
 import threading
@@ -38,6 +39,8 @@ from trading_champs.data.supabase_client import SupabaseClient, get_supabase_cli
 from trading_champs.pl.dashboard import DashboardData, DashboardProvider
 from trading_champs.pl.metrics import PerformanceMetrics
 from trading_champs.pl.tracker import DailyPnL, PnLTracker, Trade, TradeSide
+
+logger = logging.getLogger(__name__)
 
 
 def serialize_dashboard_data(data: DashboardData) -> dict:
