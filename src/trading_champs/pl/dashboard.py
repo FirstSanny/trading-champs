@@ -237,9 +237,9 @@ class DashboardProvider:
     def get_strategies(self) -> list[str]:
         """Get all strategy names.
 
-        Returns strategies from STRATEGY_REGISTRY and DATA_STRATEGY_REGISTRY (single source of truth),
-        augmented with any strategy names that appear in trades but are not
-        in the registry (e.g. legacy strategies).
+        Returns strategies from STRATEGY_REGISTRY and DATA_STRATEGY_REGISTRY
+        (single source of truth), augmented with any strategy names that
+        appear in trades but are not in the registry (e.g. legacy strategies).
         """
         from trading_champs.signals.strategies import DATA_STRATEGY_REGISTRY, STRATEGY_REGISTRY
 

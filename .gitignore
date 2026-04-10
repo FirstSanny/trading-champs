@@ -96,3 +96,5 @@ memory/
 public/
 
 .env*.local
+
+.env*.local
