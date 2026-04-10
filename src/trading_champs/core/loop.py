@@ -345,7 +345,9 @@ class TradingLoop:
         finally:
             lock.release(idempotency_key)
 
-    def _iterate_impl(self, drift_detector: Any = None, skip_execution: bool = False) -> dict[str, Any]:
+    def _iterate_impl(
+        self, drift_detector: Any = None, skip_execution: bool = False
+    ) -> dict[str, Any]:
         """Internal iterate implementation (called after lock acquired)."""
         result: dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),

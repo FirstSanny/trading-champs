@@ -645,13 +645,15 @@ class StrategyOrchestrator:
 
         for sym, counts in symbol_signal_counts.items():
             if counts["BUY"] >= min_required:
-                conviction_trades.append({
-                    "symbol": sym,
-                    "signal": "BUY",
-                    "conviction_count": counts["BUY"],
-                    "total_strategies": num_strategies,
-                    "all_counts": counts,
-                })
+                conviction_trades.append(
+                    {
+                        "symbol": sym,
+                        "signal": "BUY",
+                        "conviction_count": counts["BUY"],
+                        "total_strategies": num_strategies,
+                        "all_counts": counts,
+                    }
+                )
                 logger.info(
                     f"Conviction met for {sym}: {counts['BUY']}/{num_strategies} strategies "
                     f"(threshold={min_required}) — will execute BUY"
@@ -708,23 +710,27 @@ class StrategyOrchestrator:
                         order_type="market",
                         limit_price=latest_price,
                     )
-                    results["conviction"]["trades"].append({
-                        "symbol": sym,
-                        "qty": position_size,
-                        "price": latest_price,
-                        "status": exec_result.status.value,
-                        "conviction_count": trade["conviction_count"],
-                    })
+                    results["conviction"]["trades"].append(
+                        {
+                            "symbol": sym,
+                            "qty": position_size,
+                            "price": latest_price,
+                            "status": exec_result.status.value,
+                            "conviction_count": trade["conviction_count"],
+                        }
+                    )
                     logger.info(
                         f"Conviction BUY executed for {sym}: qty={position_size}, "
                         f"price={latest_price}, status={exec_result.status.value}"
                     )
                 except Exception as e:
                     logger.error(f"Conviction execute failed for {sym}: {e}")
-                    results["conviction"]["trades"].append({
-                        "symbol": sym,
-                        "error": str(e),
-                    })
+                    results["conviction"]["trades"].append(
+                        {
+                            "symbol": sym,
+                            "error": str(e),
+                        }
+                    )
 
         # Update stages from state store (sequential — DB writes)
         for strategy_id, strategy_loop in self._strategy_loops.items():
