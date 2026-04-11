@@ -6,6 +6,7 @@ from trading_champs.signals.strategies.data_adapters import (
     OptionsFlowAdapter,
     SentimentAdapter,
     ShortSqueezeAdapter,
+    SocialTradingAdapter,
 )
 from trading_champs.signals.strategies.data_protocol import DataDrivenStrategy
 
@@ -16,4 +17,5 @@ DATA_STRATEGY_REGISTRY: dict[str, type[DataDrivenStrategy]] = {
     "options_flow": OptionsFlowAdapter,
     "short_squeeze": ShortSqueezeAdapter,
     "sentiment": SentimentAdapter,
+    "social_trading": SocialTradingAdapter,
 }

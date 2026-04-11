@@ -686,11 +686,17 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                     StrategyOrchestrator,
                 )
                 from trading_champs.signals.strategies import (
+                    DATA_STRATEGY_REGISTRY,
                     STRATEGY_REGISTRY,
                     create_orchestrator_configs,
                 )
+                from trading_champs.signals.strategies.data_service import DataStrategyService
 
                 strategy_ids = list(STRATEGY_REGISTRY.keys())
+                data_strategy_ids = list(DATA_STRATEGY_REGISTRY.keys())
+
+                # Instantiate data strategy service with all registered data strategies
+                data_strategy_service = DataStrategyService()
 
                 # Per-strategy symbols: round-robin assign ORCHESTRATOR_SYMBOLS across registry keys
                 symbols_raw = os.environ.get("ORCHESTRATOR_SYMBOLS", "BTC/USDT")
@@ -728,6 +734,8 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                         conviction_threshold=float(os.environ.get("ORCHESTRATOR_CONVICTION_THRESHOLD", "0.5")),
                     ),
                     supabase=supabase_client,
+                    data_strategy_service=data_strategy_service,
+                    data_strategy_ids=data_strategy_ids,
                 )
     return _orchestrator
 

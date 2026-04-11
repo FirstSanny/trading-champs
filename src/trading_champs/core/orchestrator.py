@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     from trading_champs.data.supabase_client import SupabaseClient
+    from trading_champs.signals.strategies.data_service import DataStrategyService
 
 from trading_champs.core.drift_detector import DriftDetector
 from trading_champs.core.drift_store import DriftStore
@@ -452,6 +453,8 @@ class StrategyOrchestrator:
         evaluate_mode: bool = False,
         strategy_defaults: Optional[dict] = None,
         supabase: Optional["SupabaseClient"] = None,
+        data_strategy_service: Optional["DataStrategyService"] = None,
+        data_strategy_ids: Optional[list[str]] = None,
     ):
         """Initialize the orchestrator.
 
@@ -463,6 +466,11 @@ class StrategyOrchestrator:
             strategy_defaults: Field overrides applied to each auto-created config
                 (e.g. {'symbols': ['BTC/USDT'], 'timeframe': '4h'}).
             supabase: Supabase client for state persistence across cold starts.
+            data_strategy_service: Optional DataStrategyService for running
+                data-driven strategies (CEO Twitter, news NLP, etc.) alongside
+                price-series strategies in the conviction loop.
+            data_strategy_ids: List of data strategy IDs to manage state for
+                (must match keys in DATA_STRATEGY_REGISTRY).
         """
         self._config = config or OrchestratorConfig()
         self._evaluate_mode = evaluate_mode
@@ -507,6 +515,16 @@ class StrategyOrchestrator:
                 config=strategy_config,
                 db_path=self._config.db_path,
             )
+
+        # Data strategy service (for CEO Twitter, news NLP, social trading, etc.)
+        self._data_strategy_service = data_strategy_service
+        self._data_strategy_ids: list[str] = data_strategy_ids or []
+
+        # Pre-initialize data strategy states so they appear in dashboard immediately
+        # (not lazily on first iterate_all). INSERT OR REPLACE makes this idempotent.
+        for data_sid in self._data_strategy_ids:
+            state = self._state_store.load(data_sid)
+            self._state_store.save(state)
 
     def iterate_all(self, idempotency_key: Optional[str] = None) -> dict[str, Any]:
         """Run one iteration across all strategy loops.
@@ -564,6 +582,8 @@ class StrategyOrchestrator:
             "timestamp": datetime.utcnow().isoformat(),
             "strategies": {},
         }
+        # Pre-initialize signal counts so data strategy block can write to it
+        symbol_signal_counts: dict[str, dict[str, int]] = {}
 
         try:
             # Refresh symbols from watchlist DB before iterating (with timeout)
@@ -622,9 +642,35 @@ class StrategyOrchestrator:
                     "error": "iterate timed out after 45s total",
                 }
 
+        # Run data-driven strategies (CEO Twitter, news NLP, social trading, etc.)
+        # and include their signals in the conviction aggregation alongside price strategies.
+        # Signals are added to results["strategies"] so the aggregation loop counts them
+        # uniformly with price-strategy signals (no double-counting).
+        if self._data_strategy_service and self._data_strategy_ids:
+            # Collect symbols from first strategy loop (all loops share the same symbols)
+            symbols: list[str] = []
+            if self._strategy_loops:
+                first_loop = next(iter(self._strategy_loops.values()))
+                symbols = first_loop.config.symbols
+
+            for symbol in symbols:
+                try:
+                    all_signals = self._data_strategy_service.get_all_signals(symbol)
+                    for strategy_id, signal_result in all_signals.items():
+                        sig_entry = {
+                            "symbol": signal_result.symbol,
+                            "signal": signal_result.signal.value,
+                            "confidence": signal_result.metadata.get("confidence", 0.0),
+                            "reason": signal_result.reason,
+                        }
+                        if strategy_id not in results["strategies"]:
+                            results["strategies"][strategy_id] = {"status": "ok", "signals": []}
+                        results["strategies"][strategy_id]["signals"].append(sig_entry)
+                except Exception as e:
+                    logger.warning(f"Data strategy iteration failed for {symbol}: {e}")
+
         # Aggregate signals per symbol across all strategies for conviction evaluation
-        symbol_signal_counts: dict[str, dict[str, int]] = {}
-        num_strategies = len(self._strategy_loops)
+        num_strategies = len(self._strategy_loops) + len(self._data_strategy_ids)
         for strategy_id, strat_result in results["strategies"].items():
             if strat_result.get("status") == "error":
                 continue
@@ -795,16 +841,15 @@ class StrategyOrchestrator:
                 logger.error(f"Strategy {strategy_id} evaluation error: {e}")
 
     def get_strategy_state(self, strategy_id: str) -> Optional[StrategyState]:
-        """Get current state for a strategy."""
-        if strategy_id not in self._strategy_loops:
+        """Get current state for a strategy (both price-series and data-driven)."""
+        if strategy_id not in self._strategy_loops and strategy_id not in self._data_strategy_ids:
             return None
         return self._state_store.load(strategy_id)
 
     def get_all_strategy_states(self) -> dict[str, StrategyState]:
-        """Get current state for all strategies."""
-        return {
-            strategy_id: self._state_store.load(strategy_id) for strategy_id in self._strategy_loops
-        }
+        """Get current state for all strategies (price-series and data-driven)."""
+        all_ids = list(self._strategy_loops.keys()) + self._data_strategy_ids
+        return {strategy_id: self._state_store.load(strategy_id) for strategy_id in all_ids}
 
     def get_stage_history(self, strategy_id: str, limit: int = 50) -> list:
         """Get stage history for a strategy."""
