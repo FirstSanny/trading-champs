@@ -131,12 +131,6 @@
         .chip-value.positive { color: var(--color-positive); }
         .chip-value.negative { color: var(--color-negative); }
 
-        /* Toggle button for archived strategies */
-        .toggle-btn { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 600; cursor: pointer; color: var(--color-text-tertiary); border: 1px solid var(--color-border); background: transparent; user-select: none; }
-        .toggle-btn:hover { border-color: var(--color-text-secondary); color: var(--color-text-secondary); }
-        .toggle-btn input[type="checkbox"] { display: none; }
-        .toggle-btn:has(input:checked) { color: var(--color-text-secondary); border-color: var(--color-text-tertiary); background: rgba(107,122,143,0.08); }
-
         /* SECTION HEADERS */
         .section-header { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-4) var(--space-4) var(--space-3); cursor: pointer; user-select: none; }
         .section-header:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
@@ -164,6 +158,91 @@
         .strategy-metric-value { font-family: var(--font-mono); font-size: 13px; font-weight: 500; color: var(--color-text-primary); }
         .strategy-metric-value.positive { color: var(--color-positive); }
         .strategy-metric-value.negative { color: var(--color-negative); }
+
+        /* RANK BADGES */
+        .rank-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          font-size: 10px;
+          font-weight: 700;
+          font-family: var(--font-mono);
+          flex-shrink: 0;
+        }
+        .rank-badge.top  { background: var(--color-accent); color: #0A0E14; }
+        .rank-badge.mid  { background: var(--color-bg-elevated); color: var(--color-text-primary); border: 1px solid var(--color-border); }
+        .rank-badge.low  { background: transparent; color: var(--color-text-tertiary); }
+
+        /* STAGE GROUPS */
+        .stage-group { border-bottom: 1px solid var(--color-border); }
+        .stage-group:last-child { border-bottom: none; }
+
+        .stage-group-header {
+          display: flex;
+          align-items: center;
+          gap: var(--space-2);
+          padding: var(--space-3) var(--space-4);
+          cursor: pointer;
+          user-select: none;
+        }
+        .stage-group-header:hover { background: var(--color-bg-elevated); }
+        .stage-group-header:focus-visible { outline: 2px solid var(--color-accent); outline-offset: -2px; }
+
+        .stage-group-title {
+          font-size: 11px;
+          font-weight: 600;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: var(--color-text-secondary);
+        }
+        .stage-group-count {
+          font-size: 10px;
+          font-family: var(--font-mono);
+          color: var(--color-text-tertiary);
+          background: var(--color-bg-elevated);
+          padding: 1px 6px;
+          border-radius: var(--radius-sm);
+        }
+        .stage-group-chevron { margin-left: auto; color: var(--color-text-tertiary); font-size: 12px; transition: transform 0.15s; }
+        .stage-group-chevron.open { transform: rotate(180deg); }
+
+        /* STRATEGY ROWS */
+        .stage-group-content { display: none; }
+        .stage-group-content.open { display: block; }
+
+        .strategy-row {
+          display: grid;
+          grid-template-columns: 28px 1fr 65px 55px 60px 50px 40px;
+          gap: var(--space-2);
+          align-items: center;
+          padding: var(--space-2) var(--space-4);
+          border-bottom: 1px solid var(--color-border);
+          font-family: var(--font-mono);
+          font-size: 12px;
+        }
+        .strategy-row:last-child { border-bottom: none; }
+        .strategy-row:hover { background: var(--color-bg-elevated); }
+
+        .strategy-row-name {
+          font-weight: 600;
+          font-size: 12px;
+          text-transform: uppercase;
+          color: var(--color-text-primary);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .strategy-row-pnl { text-align: right; }
+        .strategy-row-metric { text-align: right; color: var(--color-text-primary); }
+        .strategy-row-empty {
+          padding: var(--space-4);
+          font-size: 12px;
+          color: var(--color-text-tertiary);
+          font-style: italic;
+        }
 
         /* TABLES */
         .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -229,6 +308,15 @@
             .trade-card-pnl { font-family: var(--font-mono); font-size: 16px; font-weight: 500; }
             .trade-card-row2 { font-size: 13px; color: var(--color-text-secondary); font-family: var(--font-mono); }
             .trade-card-row3 { font-size: 12px; color: var(--color-text-tertiary); margin-top: var(--space-1); display: flex; justify-content: space-between; }
+            /* Strategy rows: 2-line wrap on mobile */
+            .strategy-row {
+              grid-template-columns: 24px 1fr 60px;
+              grid-template-rows: auto auto;
+            }
+            .strategy-row .strategy-row-metric:nth-child(n+4) {
+              display: none;
+            }
+            .strategy-row-name { grid-column: 2; }
         }
         @media (min-width: 768px) and (max-width: 1023px) {
             .trade-card { display: none; }
@@ -294,16 +382,10 @@
         <div class="section-header" role="button" tabindex="0" id="strategies-header" onclick="toggleSection('strategies')">
             <span class="section-title">Strategies</span>
             <span class="section-count" id="strategies-count">0</span>
-            <label class="toggle-btn" id="archived-toggle" title="Show archived strategies" onclick="event.stopPropagation(); toggleArchived()">
-                <input type="checkbox" id="show-archived-cb">
-                <span>Show Archived</span>
-            </label>
             <span class="section-chevron open" id="strategies-chevron">▼</span>
         </div>
         <div class="collapsible-content open" id="strategies-content">
-            <div class="strategy-cards" id="strategy-cards">
-                <div class="empty-state"><div class="empty-state-icon">&#9881;</div><div class="empty-state-title">No strategies configured</div><div class="empty-state-body">Set ORCHESTRATOR_STRATEGIES to enable multi-strategy staging.</div></div>
-            </div>
+            <div id="strategy-stage-groups"><!-- rendered by JS --></div>
         </div>
     </section>
 
@@ -385,7 +467,6 @@
         var API_BASE = '/api';
         var equityChart, dailyChart, strategyChart;
         var currentMode = 'paper';
-        var showArchived = false;
         var autoRefresh = false;
         var pollInterval = null;
         var allStrategies = {};
@@ -396,13 +477,6 @@
             if (mode === currentMode) return;
             currentMode = mode;
             updateModeUI();
-            loadDashboard();
-        }
-
-        /* ---- ARCHIVED TOGGLE ---- */
-        function toggleArchived() {
-            showArchived = !showArchived;
-            document.getElementById('show-archived-cb').checked = showArchived;
             loadDashboard();
         }
 
@@ -801,57 +875,120 @@
         }
 
         /* ---- STRATEGIES OVERVIEW ---- */
+        var STAGE_ORDER = ['dry_run', 'paper', 'live_stage_1', 'live_stage_2', 'archived'];
+        var _stageOpenState = { dry_run: true, paper: true, live_stage_1: false, live_stage_2: false, archived: false };
+
+        function groupByStage(strategies) {
+            var groups = {};
+            strategies.forEach(function(s) {
+                var stage = s.stage || 'dry_run';
+                if (!groups[stage]) groups[stage] = [];
+                groups[stage].push(s);
+            });
+            return groups;
+        }
+
+        function sortStrategies(strategies) {
+            return strategies.slice().sort(function(a, b) {
+                var aPnl = a.metrics && a.metrics.total_pnl_pct || 0;
+                var bPnl = b.metrics && b.metrics.total_pnl_pct || 0;
+                if (bPnl !== aPnl) return bPnl - aPnl;
+                var aWr = a.metrics && a.metrics.win_rate || 0;
+                var bWr = b.metrics && b.metrics.win_rate || 0;
+                if (bWr !== aWr) return bWr - aWr;
+                var aTrades = a.metrics && a.metrics.total_trades || 0;
+                var bTrades = b.metrics && b.metrics.total_trades || 0;
+                if (bTrades !== aTrades) return bTrades - aTrades;
+                return String(a.strategy_id).localeCompare(String(b.strategy_id));
+            });
+        }
+
+        function rankBadgeClass(rank) {
+            if (rank === 1) return 'rank-badge top';
+            if (rank <= 3) return 'rank-badge mid';
+            return 'rank-badge low';
+        }
+
+        function renderStrategyRow(rank, strategy) {
+            var m = strategy.metrics || {};
+            var pnlVal = m.total_pnl_pct || 0;
+            var pnlCls = pnlVal > 0 ? 'pnl-positive' : (pnlVal < 0 ? 'pnl-negative' : '');
+            var pnlAria = pnlVal >= 0 ? formatPct(pnlVal) + ' profit' : formatPct(pnlVal) + ' loss';
+            var wrVal = m.win_rate || 0;
+            var wrCls = wrVal >= 55 ? 'pnl-positive' : (wrVal < 40 ? 'pnl-negative' : '');
+            var ddVal = m.current_drawdown_pct || 0;
+            var ddCls = ddVal > 5 ? 'pnl-negative' : '';
+            return '<div class="strategy-row" role="row">' +
+                '<span class="' + rankBadgeClass(rank) + '" aria-label="Rank ' + rank + '">' + rank + '</span>' +
+                '<span class="strategy-row-name" aria-label="Strategy ' + String(strategy.strategy_id).toUpperCase() + '">' + String(strategy.strategy_id).toUpperCase() + '</span>' +
+                '<span class="strategy-row-pnl ' + pnlCls + '" aria-label="' + pnlAria + '">' + formatPct(pnlVal) + '</span>' +
+                '<span class="strategy-row-metric ' + wrCls + '">' + wrVal + '%</span>' +
+                '<span class="strategy-row-metric">' + (m.total_trades || 0) + '</span>' +
+                '<span class="strategy-row-metric ' + ddCls + '">' + ddVal.toFixed(1) + '%</span>' +
+                '<span class="strategy-row-metric" style="color:var(--color-text-secondary)">' + (m.days_in_stage || 0) + 'd</span>' +
+            '</div>';
+        }
+
+        function renderStageGroup(stageName, strategies, isOpen) {
+            var displayName = stageName.replace('_', ' ').toUpperCase();
+            var count = strategies.length;
+            var chevron = isOpen ? '▼' : '▶';
+            var openClass = isOpen ? ' open' : '';
+            var html = '<div class="stage-group" role="region" aria-label="' + displayName + ' stage, ' + count + ' strategies">';
+            html += '<div class="stage-group-header" role="button" tabindex="0" aria-expanded="' + isOpen + '" onclick="toggleStage(\'' + stageName + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();toggleStage(\'' + stageName + '\')}">';
+            html += '<span class="stage-group-title">' + displayName + '</span>';
+            html += '<span class="stage-group-count">' + count + '</span>';
+            html += '<span class="stage-group-chevron' + openClass + '">' + chevron + '</span>';
+            html += '</div>';
+            html += '<div class="stage-group-content' + openClass + '" id="stage-content-' + stageName + '">';
+            if (strategies.length === 0) {
+                html += '<div class="strategy-row-empty">No strategies in ' + displayName + '</div>';
+            } else {
+                strategies.forEach(function(s, i) {
+                    html += renderStrategyRow(i + 1, s);
+                });
+            }
+            html += '</div></div>';
+            return html;
+        }
+
+        function toggleStage(stageName) {
+            var content = document.getElementById('stage-content-' + stageName);
+            var header = content.previousElementSibling;
+            var chevron = header.querySelector('.stage-group-chevron');
+            var isOpen = content.classList.toggle('open');
+            chevron.classList.toggle('open', isOpen);
+            chevron.textContent = isOpen ? '▼' : '▶';
+            header.setAttribute('aria-expanded', isOpen);
+            _stageOpenState[stageName] = isOpen;
+        }
+
         function renderStrategies(strategies) {
-            var container = document.getElementById('strategy-cards');
+            var container = document.getElementById('strategy-stage-groups');
             var countEl = document.getElementById('strategies-count');
             countEl.textContent = strategies.length;
 
             if (!strategies || strategies.length === 0) {
-                container.innerHTML = '';
+                container.innerHTML = DOMPurify.sanitize('<div class="strategy-row-empty" style="padding:var(--space-4)">No strategies configured. Set ORCHESTRATOR_STRATEGIES to enable multi-strategy staging.</div>', { RETURN_TRUSTED_TYPE: false });
                 return;
             }
 
-            var html = strategies.map(function(s) {
-                var m = s.metrics || {};
-                var stageClass = s.stage || 'dry_run';
-                var stageLabel = (s.stage || 'dry_run').replace('_', ' ');
-                var pnlVal = m.total_pnl_pct || 0;
-                var pnlCls = pnlVal > 0 ? 'positive' : (pnlVal < 0 ? 'negative' : '');
-                var ddVal = m.current_drawdown_pct || 0;
-                var ddCls = ddVal > 5 ? 'negative' : '';
-                var wrVal = m.win_rate || 0;
-                var wrCls = wrVal >= 55 ? 'positive' : (wrVal < 40 ? 'negative' : '');
-                var archivedCls = stageClass === 'archived' ? ' archived' : '';
-                return '<div class="strategy-card' + archivedCls + '">' +
-                    '<div class="strategy-card-header">' +
-                        '<span class="strategy-card-name">' + String(s.strategy_id).toUpperCase() + '</span>' +
-                        '<span class="stage-badge ' + stageClass + '">' + stageLabel + '</span>' +
-                    '</div>' +
-                    '<div class="strategy-card-metrics">' +
-                        '<div class="strategy-metric">' +
-                            '<span class="strategy-metric-label">Win Rate</span>' +
-                            '<span class="strategy-metric-value ' + wrCls + '">' + wrVal + '%</span>' +
-                        '</div>' +
-                        '<div class="strategy-metric">' +
-                            '<span class="strategy-metric-label">Trades</span>' +
-                            '<span class="strategy-metric-value">' + (m.total_trades || 0) + '</span>' +
-                        '</div>' +
-                        '<div class="strategy-metric">' +
-                            '<span class="strategy-metric-label">P&amp;L</span>' +
-                            '<span class="strategy-metric-value ' + pnlCls + '">' + formatPct(pnlVal) + '</span>' +
-                        '</div>' +
-                        '<div class="strategy-metric">' +
-                            '<span class="strategy-metric-label">Drawdown</span>' +
-                            '<span class="strategy-metric-value ' + ddCls + '">' + ddVal.toFixed(1) + '%</span>' +
-                        '</div>' +
-                        '<div class="strategy-metric">' +
-                            '<span class="strategy-metric-label">Days</span>' +
-                            '<span class="strategy-metric-value">' + (m.days_in_stage || 0) + '</span>' +
-                        '</div>' +
-                    '</div>' +
-                '</div>';
+            var groups = groupByStage(strategies);
+
+            // Canonical stage order: known stages first, then unknown stages alphabetically
+            var knownStages = STAGE_ORDER.filter(function(s) { return s in groups || true; });
+            var unknownStages = Object.keys(groups).filter(function(s) { return knownStages.indexOf(s) === -1; }).sort();
+
+            var allStages = knownStages.concat(unknownStages);
+
+            var html = '';
+            allStages.forEach(function(stageName) {
+                var stageStrategies = sortStrategies(groups[stageName] || []);
+                var isOpen = _stageOpenState[stageName] !== undefined ? _stageOpenState[stageName] : false;
+                html += renderStageGroup(stageName, stageStrategies, isOpen);
             });
-            container.innerHTML = DOMPurify.sanitize(html.join(''), { RETURN_TRUSTED_TYPE: false });
+
+            container.innerHTML = DOMPurify.sanitize(html, { RETURN_TRUSTED_TYPE: false });
         }
 
         /* ---- MAIN LOAD ---- */
@@ -861,7 +998,7 @@
                 fetchJSON(API_BASE + '/dashboard?mode=' + currentMode),
                 fetchJSON(API_BASE + '/equity-curve?mode=' + currentMode),
                 fetchJSON(API_BASE + '/strategy-curves?mode=' + currentMode),
-                fetchJSON(API_BASE + '/strategies/overview' + (showArchived ? '?include_archived=true' : '')),
+                fetchJSON(API_BASE + '/strategies/overview'),
                 fetchJSON(API_BASE + '/watchlist')
             ])
             .then(function(results) {
@@ -912,6 +1049,7 @@
         window.setMode = setMode;
         window.toggleAuto = toggleAuto;
         window.toggleSection = toggleSection;
+        window.toggleStage = toggleStage;
         window.loadDashboard = loadDashboard;
     })();
     </script>
