@@ -8,6 +8,7 @@ from trading_champs.signals.strategies.data_adapters import (
     OptionsFlowAdapter,
     SentimentAdapter,
     ShortSqueezeAdapter,
+    SocialTradingAdapter,
 )
 from trading_champs.signals.strategies.data_protocol import DataDrivenStrategy, StrategyMetadata
 from trading_champs.signals.strategies.data_registry import DATA_STRATEGY_REGISTRY
@@ -101,4 +102,5 @@ __all__ = [
     "OptionsFlowAdapter",
     "ShortSqueezeAdapter",
     "SentimentAdapter",
+    "SocialTradingAdapter",
 ]

@@ -11,6 +11,7 @@ from trading_champs.signals.ceo_twitter_strategy import CEOTwitterConfig, CEOTwi
 from trading_champs.signals.news_nlp_strategy import NewsNLPConfig, NewsNLPStrategy
 from trading_champs.signals.options_flow_strategy import OptionsFlowConfig, OptionsFlowStrategy
 from trading_champs.signals.short_squeeze_strategy import ShortSqueezeConfig, ShortSqueezeStrategy
+from trading_champs.signals.social_trading import SocialTrader
 from trading_champs.signals.strategies.data_protocol import DataDrivenStrategy, StrategyMetadata
 
 
@@ -190,4 +191,41 @@ class SentimentAdapter(DataDrivenStrategy):
             "signal_count": len(signals),
         }
         reason = f"sentiment:{symbol} score={agg_score:.2f}"
+        return direction, metadata, reason
+
+
+class SocialTradingAdapter(DataDrivenStrategy):
+    """Adapter for SocialTrader.
+
+    Wraps SocialTrader.get_signal() -> dict
+    into generate_signal(symbol) -> (SignalType, Metadata, reason).
+    Uses the first tracked symbol for simplicity.
+    """
+
+    def __init__(
+        self,
+        config: str | None = None,
+        api_keys: dict | None = None,
+    ) -> None:
+        # config is the persona name string
+        persona = config or "trumps_son"
+        self._trader = SocialTrader(persona=persona)
+
+    @property
+    def name(self) -> str:
+        return "social_trading"
+
+    def generate_signal(self, symbol: str) -> tuple[SignalType, StrategyMetadata, str]:
+        signal_data = self._trader.get_signal(symbol=symbol)
+        if signal_data is None:
+            return SignalType.NEUTRAL, {}, "no social signal"
+        side_map = {"long": SignalType.BUY, "short": SignalType.SELL}
+        direction = side_map.get(signal_data["side"].value, SignalType.NEUTRAL)
+        metadata: StrategyMetadata = {
+            "confidence": signal_data["confidence"],
+            "trader": signal_data["trader"],
+            "persona": signal_data["persona"],
+            "reason": signal_data["reason"],
+        }
+        reason = f"social:{signal_data['persona']} {signal_data['reason']}"
         return direction, metadata, reason
