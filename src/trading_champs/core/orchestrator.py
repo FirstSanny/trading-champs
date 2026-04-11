@@ -519,12 +519,9 @@ class StrategyOrchestrator:
         # Data strategy service (for CEO Twitter, news NLP, social trading, etc.)
         self._data_strategy_service = data_strategy_service
         self._data_strategy_ids: list[str] = data_strategy_ids or []
-
-        # Pre-initialize data strategy states so they appear in dashboard immediately
-        # (not lazily on first iterate_all). INSERT OR REPLACE makes this idempotent.
-        for data_sid in self._data_strategy_ids:
-            state = self._state_store.load(data_sid)
-            self._state_store.save(state)
+        # Data strategy states are created lazily on first iterate_all() via the
+        # StrategyStateStore.load() default-state fallback — no pre-initialization
+        # needed; avoids Supabase connection overhead on cold starts.
 
     def iterate_all(self, idempotency_key: Optional[str] = None) -> dict[str, Any]:
         """Run one iteration across all strategy loops.
