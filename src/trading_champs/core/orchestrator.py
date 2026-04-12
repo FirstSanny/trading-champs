@@ -159,12 +159,13 @@ class StrategyLoop:
             self._drift_detector = DriftDetector(self.drift_store)
         return self._drift_detector
 
-    def iterate(self) -> dict[str, Any]:
+    def iterate(self, skip_execution: bool = False) -> dict[str, Any]:
         """Run one iteration of this strategy's loop."""
         try:
             result = self.loop.iterate(
                 idempotency_key=f"orchestrator_{self.config.strategy_id}",
                 drift_detector=self.drift_detector,
+                skip_execution=skip_execution,
             )
 
             # Record dry_run fills for drift detection
