@@ -14,7 +14,7 @@ from trading_champs.data.connectors.base import BaseConnector, PriceBar
 
 logger = logging.getLogger(__name__)
 
-ALPACA_DATA_API = os.getenv("ALPACA_DATA_API", "https://data.alpaca.markets/v2")
+ALPACA_DATA_API = os.getenv("ALPACA_DATA_API", "https://data.alpaca.markets/v2/stocks")
 DRIFT_WINDOW_BARS = 10  # bars for drift comparison window
 
 
@@ -90,8 +90,8 @@ class AlpacaMarketDataConnector(BaseConnector):
         if not self._headers.get("APCA-API-SECRET-KEY"):
             raise ConnectionError("Alpaca Data API secret not configured (ALPACA_DATA_API_SECRET)")
 
-        # Test with a simple request
-        test_params: dict[str, str | int] = {"symbols": "AAPL", "limit": 1}
+        # Test with a simple request (timeframe is required by Alpaca Data API for bars)
+        test_params: dict[str, str | int] = {"symbols": "AAPL", "limit": 1, "timeframe": "4Hour"}
         try:
             resp = requests.get(
                 f"{ALPACA_DATA_API}/bars",
