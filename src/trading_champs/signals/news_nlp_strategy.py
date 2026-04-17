@@ -16,13 +16,17 @@ Key components:
 
 from __future__ import annotations
 
+import logging
+import os
 import random
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional, Sequence
 
 from trading_champs.signals.backtester import Backtester, BacktestResult, SignalType
+
+logger = logging.getLogger(__name__)
 
 
 class EventType(Enum):
@@ -445,6 +449,9 @@ class NewsFetcher:
     ) -> list[NewsArticle]:
         """Fetch news articles for a symbol.
 
+        Uses NewsAPI when api_keys["news_api_key"] is present,
+        otherwise falls back to realistic mock data.
+
         Args:
             symbol: Stock symbol.
             hours: Lookback window in hours.
@@ -452,8 +459,93 @@ class NewsFetcher:
         Returns:
             List of NewsArticle objects.
         """
-        # In production: make real API calls based on self._keys
+        news_api_key = self._keys.get("news_api_key") or os.environ.get("NEWS_API_KEY")
+        if news_api_key:
+            return self._fetch_from_newsapi(symbol, hours, news_api_key)
         return self._generate_mock_articles(symbol, hours)
+
+    def _fetch_from_newsapi(self, symbol: str, hours: int, api_key: str) -> list[NewsArticle]:
+        """Fetch real articles from NewsAPI.
+
+        Args:
+            symbol: Stock symbol.
+            hours: Lookback window in hours.
+            api_key: NewsAPI key.
+
+        Returns:
+            List of NewsArticle objects from NewsAPI.
+        """
+        import requests
+
+        # Clean symbol for search (BTC/USD -> BTC)
+        search_term = symbol.split("/")[0].upper()
+        if search_term == "BTC":
+            search_term = "Bitcoin"
+        elif search_term == "ETH":
+            search_term = "Ethereum"
+
+        url = "https://newsapi.org/v2/everything"
+        params = {
+            "q": search_term,
+            "apiKey": api_key,
+            "language": "en",
+            "sortBy": "publishedAt",
+            "pageSize": 50,
+        }
+
+        try:
+            resp = requests.get(url, params=params, timeout=10)
+            data = resp.json()
+            if data.get("status") != "ok":
+                logger.warning(
+                    f"NewsAPI error for {symbol}: {data.get('code')} - {data.get('message')}"
+                )
+                return self._generate_mock_articles(symbol, hours)
+
+            articles: list[NewsArticle] = []
+            now = datetime.now(timezone.utc)
+
+            scorer = SentimentScorer()
+            for item in data.get("articles", []):
+                try:
+                    published = item.get("publishedAt", "")
+                    if published:
+                        article_time = datetime.fromisoformat(published.replace("Z", "+00:00"))
+                        hours_ago = (now - article_time).total_seconds() / 3600
+                        if hours_ago > hours + 1:
+                            continue
+
+                    text_lower = item.get("title", "").lower()
+                    sentiment = scorer.score(text_lower)
+
+                    articles.append(
+                        NewsArticle(
+                            headline=item.get("title", ""),
+                            source=item.get("source", {}).get("name", "NewsAPI"),
+                            url=item.get("url", ""),
+                            timestamp=article_time if published else now,
+                            symbols=(symbol,),
+                            entities=(search_term,),
+                            sentiment_score=sentiment,
+                            event_type=EventType.GENERAL,
+                            confidence=min(0.95, abs(sentiment) + 0.2),
+                            relevance_score=0.7,
+                        )
+                    )
+                except Exception:
+                    continue
+
+            if articles:
+                logger.info(f"NewsAPI: fetched {len(articles)} real articles for {symbol}")
+            else:
+                logger.warning(f"NewsAPI: no articles for {symbol}, using mock")
+                return self._generate_mock_articles(symbol, hours)
+
+            return articles
+
+        except Exception as e:
+            logger.warning(f"NewsAPI fetch failed for {symbol}: {e}")
+            return self._generate_mock_articles(symbol, hours)
 
     def _generate_mock_articles(self, symbol: str, hours: int) -> list[NewsArticle]:
         """Generate realistic mock news articles.
@@ -477,7 +569,7 @@ class NewsFetcher:
 
         articles: list[NewsArticle] = []
         num_articles = random.randint(8, 25)
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
 
         for i in range(num_articles):
             hours_ago = random.uniform(0, hours)
@@ -766,7 +858,7 @@ class NewsNLPStrategy:
 
         for article in articles:
             # Calculate time decay factor
-            age_hours = (datetime.now() - article.timestamp).total_seconds() / 3600
+            age_hours = (datetime.now(timezone.utc) - article.timestamp).total_seconds() / 3600
             decay_factor = self._calc_time_decay(age_hours)
 
             # Get event weight
