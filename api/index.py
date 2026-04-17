@@ -448,6 +448,7 @@ def auth_guard(request: Request) -> JSONResponse | None:
         "/api/strategy-curves",
         "/api/strategies/overview",
         "/api/watchlist",
+        "/api/watchlist/bulk",
     ):
         return None
     if require_api_auth(request):
