@@ -107,7 +107,7 @@ class TradingLoop:
                     self.config.data_connector = "yahoo_finance"
                     self._alpaca_market = None
             if self._alpaca_market is not None and self._alpaca_market.is_connected():
-                logger.info(f"[_ensure_data_connector] Using AlpacaMarketDataConnector")
+                logger.info("[_ensure_data_connector] Using AlpacaMarketDataConnector")
                 return self._alpaca_market
             # Fall through to Yahoo Finance
 
@@ -126,7 +126,7 @@ class TradingLoop:
                     self.config.data_connector = "ccxt"
                     self._yahoo = None
             if self._yahoo is not None and self._yahoo.is_connected():
-                logger.info(f"[_ensure_data_connector] Using YahooFinanceConnector")
+                logger.info("[_ensure_data_connector] Using YahooFinanceConnector")
                 return self._yahoo
             # Fall through to CCXT
 
@@ -368,7 +368,8 @@ class TradingLoop:
                 # 1. Fetch price data
                 prices, latest_price, latest_bar_timestamp = self._fetch_prices(symbol)
                 logger.info(
-                    f"[_iterate_impl] {self.config.strategy}: fetched {len(prices)} bars for {symbol} @ {latest_price}"
+                    f"[_iterate_impl] {self.config.strategy}: fetched {len(prices)} bars "
+                    f"for {symbol} @ {latest_price}"
                 )
                 result["signals"].append(
                     {

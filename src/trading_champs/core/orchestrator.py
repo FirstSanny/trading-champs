@@ -630,8 +630,8 @@ class StrategyOrchestrator:
                     sig_count = len(result.get("signals", []))
                     action_count = len(result.get("actions", []))
                     logger.info(
-                        f"[iterate_all] Strategy {strategy_id}: "
-                        f"status={result.get('status')}, signals={sig_count}, actions={action_count}"
+                        f"[iterate_all] {strategy_id}: "
+                        f"s={sig_count} a={action_count} st={result.get('status')}"
                     )
                 except TimeoutError:
                     sid = futures[future]
@@ -663,7 +663,8 @@ class StrategyOrchestrator:
                 symbols = first_loop.config.symbols
 
             logger.info(
-                f"[iterate_all] Running {len(self._data_strategy_ids)} data strategies over {len(symbols)} symbols"
+                f"[iterate_all] Running {len(self._data_strategy_ids)} "
+                f"data strategies over {len(symbols)} symbols"
             )
             for symbol in symbols:
                 try:
@@ -684,10 +685,8 @@ class StrategyOrchestrator:
         # Aggregate signals per symbol across all strategies for conviction evaluation
         # Signal values from signal.value are lowercase: "buy", "sell", "neutral"
         # Map them to the uppercase keys in symbol_signal_counts
-        logger.info(
-            f"[iterate_all] Signal counts before aggregation: "
-            f"{ {sid: len(r.get('signals', [])) for sid, r in results['strategies'].items()} }"
-        )
+        sig_counts = {sid: len(r.get("signals", [])) for sid, r in results["strategies"].items()}
+        logger.info(f"[iterate_all] Signal counts before aggregation: {sig_counts}")
         num_strategies = len(self._strategy_loops) + len(self._data_strategy_ids)
         for strategy_id, strat_result in results["strategies"].items():
             if strat_result.get("status") == "error":
