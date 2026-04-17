@@ -173,8 +173,19 @@ class TradingLoop:
                 )
                 if bars:
                     closes = [bar.close for bar in bars]
-                    return closes, closes[-1], bars[-1].timestamp
-                # No bars — try next connector
+                    # Alpaca returns very few bars for US stocks (market hours only).
+                    # Treat < 10 bars as insufficient — force fallback to next connector
+                    # so stocks get full history from Yahoo Finance.
+                    if len(closes) >= 10:
+                        return closes, closes[-1], bars[-1].timestamp
+                    logger.warning(
+                        "[_fetch_prices] %s returned only %d bars for %s, "
+                        "forcing fallback (need >= 10 for reliable signals)",
+                        connector.name,
+                        len(closes),
+                        symbol,
+                    )
+                # No bars or insufficient — try next connector
             except ConnectionError as e:
                 logger.warning(
                     "[_fetch_prices] %s failed for %s (%s), trying next connector",
