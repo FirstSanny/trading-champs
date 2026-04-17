@@ -680,6 +680,8 @@ class StrategyOrchestrator:
                     logger.warning(f"Data strategy iteration failed for {symbol}: {e}")
 
         # Aggregate signals per symbol across all strategies for conviction evaluation
+        # Signal values from signal.value are lowercase: "buy", "sell", "neutral"
+        # Map them to the uppercase keys in symbol_signal_counts
         logger.info(
             f"[iterate_all] Signal counts before aggregation: "
             f"{ {sid: len(r.get('signals', [])) for sid, r in results['strategies'].items()} }"
@@ -690,7 +692,7 @@ class StrategyOrchestrator:
                 continue
             for sig_entry in strat_result.get("signals", []):
                 sym = sig_entry.get("symbol")
-                sig = sig_entry.get("signal")
+                sig = sig_entry.get("signal", "").upper()  # Normalize to uppercase
                 if sym and sig:
                     if sym not in symbol_signal_counts:
                         symbol_signal_counts[sym] = {"BUY": 0, "HOLD": 0, "SELL": 0}
