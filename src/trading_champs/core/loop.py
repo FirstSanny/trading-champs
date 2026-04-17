@@ -161,19 +161,56 @@ class TradingLoop:
         Returns:
             Tuple of (prices list, latest close price, latest bar timestamp).
         """
-        connector = self._ensure_data_connector()
-        bars = connector.fetch_ohlcv(
-            symbol,
-            timeframe=self.config.timeframe,
-            limit=self.config.lookback_bars,
-        )
-        if not bars:
-            raise ValueError(f"No price data for {symbol}")
+        last_connector_name: str | None = None
+        for attempt in range(3):
+            connector = self._ensure_data_connector()
+            last_connector_name = connector.name
+            try:
+                bars = connector.fetch_ohlcv(
+                    symbol,
+                    timeframe=self.config.timeframe,
+                    limit=self.config.lookback_bars,
+                )
+                if bars:
+                    closes = [bar.close for bar in bars]
+                    return closes, closes[-1], bars[-1].timestamp
+                # No bars — try next connector
+            except ConnectionError as e:
+                logger.warning(
+                    "[_fetch_prices] %s failed for %s (%s), trying next connector",
+                    connector.name,
+                    symbol,
+                    e,
+                )
+            except Exception as e:
+                logger.error(
+                    "[_fetch_prices] %s error for %s: %s",
+                    connector.name,
+                    symbol,
+                    e,
+                )
+                break  # Non-connection errors shouldn't retry same connector
 
-        closes = [bar.close for bar in bars]
-        latest_close = closes[-1]
-        latest_bar_timestamp = bars[-1].timestamp
-        return closes, latest_close, latest_bar_timestamp
+            # Force connector change for next attempt
+            self._force_connector_fallback()
+
+        raise ValueError(f"No price data for {symbol} (tried {last_connector_name})")
+
+    def _force_connector_fallback(self) -> None:
+        """Force the data connector to fall to the next option in the chain.
+
+        Called when the current connector fails so the next _ensure_data_connector
+        call creates a fresh connector instead of reusing the cached one.
+        """
+        current = self.config.data_connector
+        if current == "alpaca_market":
+            self.config.data_connector = "yahoo_finance"
+            self._alpaca_market = None
+        elif current == "yahoo_finance":
+            self.config.data_connector = "ccxt"
+            self._yahoo = None
+        else:
+            self._ccxt = None  # Force recreate on next call
 
     def _generate_signal(self, prices: list[float]) -> SignalType:
         """Generate trading signal from price data.
