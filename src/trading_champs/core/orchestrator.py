@@ -662,7 +662,9 @@ class StrategyOrchestrator:
                 first_loop = next(iter(self._strategy_loops.values()))
                 symbols = first_loop.config.symbols
 
-            logger.info(f"[iterate_all] Running {len(self._data_strategy_ids)} data strategies over {len(symbols)} symbols")
+            logger.info(
+                f"[iterate_all] Running {len(self._data_strategy_ids)} data strategies over {len(symbols)} symbols"
+            )
             for symbol in symbols:
                 try:
                     all_signals = self._data_strategy_service.get_all_signals(symbol)

@@ -140,7 +140,9 @@ class TradingLoop:
         """Lazily create and connect the trading connector based on mode."""
         if self._alpaca is None:
             self._alpaca = create_connector(self.config.mode)
-            logger.info(f"[_ensure_alpaca] Created connector: {self._alpaca.name} (mode={self.config.mode})")
+            logger.info(
+                f"[_ensure_alpaca] Created connector: {self._alpaca.name} (mode={self.config.mode})"
+            )
             if self.config.mode != "dry_run":
                 self._alpaca.connect()
             self._executor = TradeExecutor(self._alpaca)
@@ -379,9 +381,7 @@ class TradingLoop:
                 # 2. Generate signal
                 signal = self._generate_signal(prices)
                 signal_str = signal.value if isinstance(signal, SignalType) else str(signal)
-                logger.info(
-                    f"[_iterate_impl] {self.config.strategy}/{symbol}: signal={signal_str}"
-                )
+                logger.info(f"[_iterate_impl] {self.config.strategy}/{symbol}: signal={signal_str}")
                 result["signals"][-1]["signal"] = signal_str
 
                 # 3. Check if we should exit
