@@ -704,6 +704,8 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                 per_symbol = [symbols_list[i % len(symbols_list)] for i in range(len(strategy_ids))]
 
                 # Per-strategy overrides (list form for per-key values)
+                # ORCHESTRATOR_LOOKBACK_BARS: how many bars to fetch for signal detection (default 300 for longer MA periods)
+                lookback_override = int(os.environ.get("ORCHESTRATOR_LOOKBACK_BARS", "300"))
                 per_strategy_defaults: list[dict] = [
                     {
                         "symbols": [per_symbol[i]],
@@ -712,6 +714,7 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                             "ORCHESTRATOR_DATA_CONNECTOR", "alpaca_market"
                         ),
                         "exec_connector": os.environ.get("ORCHESTRATOR_EXEC_CONNECTOR", "alpaca"),
+                        "lookback_bars": lookback_override,
                     }
                     for i in range(len(strategy_ids))
                 ]
