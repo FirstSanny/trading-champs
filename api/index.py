@@ -735,7 +735,9 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                     strategies=strategy_configs,
                     config=OrchestratorConfig(
                         watchlist_repository=_get_watchlist_repo(),
-                        conviction_threshold=float(os.environ.get("ORCHESTRATOR_CONVICTION_THRESHOLD", "0.5")),
+                        conviction_threshold=float(
+                            os.environ.get("ORCHESTRATOR_CONVICTION_THRESHOLD", "0.5")
+                        ),
                     ),
                     supabase=supabase_client,
                     data_strategy_service=data_strategy_service,
@@ -833,6 +835,17 @@ async def strategies_overview(request: Request) -> JSONResponse:
                     "current_drawdown_pct": round(metrics.current_drawdown_pct, 2),
                     "total_pnl_pct": round(metrics.total_pnl_pct, 2),
                     "days_in_stage": metrics.days_in_stage,
+                }
+            elif strategy_id in orchestrator._data_strategy_ids:
+                # Data strategy metrics (signal-quality based)
+                data_loop = orchestrator._get_data_strategy_loop(strategy_id)
+                sig_metrics = data_loop.get_signal_metrics(state.stage_entered_at)
+                metrics_data = {
+                    "total_signals": sig_metrics.total_signals,
+                    "buy_rate": round(sig_metrics.buy_rate * 100, 1),
+                    "neutral_rate": round(sig_metrics.neutral_rate * 100, 1),
+                    "consecutive_neutral": sig_metrics.consecutive_neutral,
+                    "days_in_stage": sig_metrics.days_in_stage,
                 }
             result.append(
                 {

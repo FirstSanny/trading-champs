@@ -523,6 +523,105 @@ class StrategyOrchestrator:
         # Data strategy states are created lazily on first iterate_all() via the
         # StrategyStateStore.load() default-state fallback — no pre-initialization
         # needed; avoids Supabase connection overhead on cold starts.
+        self._data_strategy_loops: dict[str, Any] = {}  # lazy init
+
+        # Shared PnLTracker for data strategies (mirrors price strategy pattern)
+        self._data_tracker: Optional[PnLTracker] = None
+
+    @property
+    def data_tracker(self) -> PnLTracker:
+        """Get the shared PnLTracker for data strategies."""
+        if self._data_tracker is None:
+            self._data_tracker = PnLTracker()
+        return self._data_tracker
+
+    def _get_data_strategy_loop(self, strategy_id: str) -> Any:
+        """Get or create a DataStrategyLoop for a data strategy.
+
+        Args:
+            strategy_id: Strategy ID from DATA_STRATEGY_REGISTRY.
+
+        Returns:
+            DataStrategyLoop instance.
+        """
+        if strategy_id not in self._data_strategy_loops:
+            from trading_champs.core.data_strategy_loop import (
+                DataStrategyLoop,
+                DataStrategyLoopConfig,
+            )
+
+            # Load state to get stage and symbols
+            state = self._state_store.load(strategy_id)
+            symbols = []
+            if self._strategy_loops:
+                first_loop = next(iter(self._strategy_loops.values()))
+                symbols = first_loop.config.symbols
+
+            config = DataStrategyLoopConfig(
+                strategy_id=strategy_id,
+                symbols=symbols,
+                position_size_fraction=state.current_metrics.get("position_size_fraction", 0.1),
+                max_positions=3,
+                stop_loss_percent=2.0,
+                mode=state.stage,
+            )
+
+            self._data_strategy_loops[strategy_id] = DataStrategyLoop(
+                strategy_id=strategy_id,
+                config=config,
+                tracker=self.data_tracker,
+                data_service=self._data_strategy_service,
+            )
+
+        return self._data_strategy_loops[strategy_id]
+
+    def _iterate_data_strategies(self, symbols: list[str]) -> dict[str, Any]:
+        """Run all data strategy loops in parallel and collect results.
+
+        Args:
+            symbols: List of symbols to analyze.
+
+        Returns:
+            Dict mapping strategy_id to iteration result.
+        """
+        results: dict[str, Any] = {}
+
+        if not self._data_strategy_service or not self._data_strategy_ids:
+            return results
+
+        def run_data_strategy(strategy_id: str) -> tuple[str, dict[str, Any]]:
+            try:
+                loop = self._get_data_strategy_loop(strategy_id)
+                result = loop.iterate()
+                return strategy_id, result
+            except Exception as e:
+                logger.error(f"Data strategy {strategy_id} error: {e}")
+                return strategy_id, {
+                    "status": "error",
+                    "strategy_id": strategy_id,
+                    "error": str(e),
+                }
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(run_data_strategy, sid): sid for sid in self._data_strategy_ids
+            }
+            done, not_done = wait(futures, timeout=60)
+            for future in done:
+                try:
+                    strategy_id, result = future.result(timeout=5)
+                    results[strategy_id] = result
+                except TimeoutError:
+                    sid = futures[future]
+                    logger.error(f"Data strategy {sid} result timed out")
+                    results[sid] = {"status": "error", "strategy_id": sid, "error": "timeout"}
+            for future in not_done:
+                sid = futures[future]
+                future.cancel()
+                logger.warning(f"Data strategy {sid} timed out after 60s — cancelling")
+                results[sid] = {"status": "error", "strategy_id": sid, "error": "timeout"}
+
+        return results
 
     def iterate_all(self, idempotency_key: Optional[str] = None) -> dict[str, Any]:
         """Run one iteration across all strategy loops.
@@ -651,36 +750,66 @@ class StrategyOrchestrator:
                     "error": "iterate timed out after 45s total",
                 }
 
-        # Run data-driven strategies (CEO Twitter, news NLP, social trading, etc.)
-        # and include their signals in the conviction aggregation alongside price strategies.
-        # Signals are added to results["strategies"] so the aggregation loop counts them
-        # uniformly with price-strategy signals (no double-counting).
-        if self._data_strategy_service and self._data_strategy_ids:
-            # Collect symbols from first strategy loop (all loops share the same symbols)
-            symbols: list[str] = []
-            if self._strategy_loops:
-                first_loop = next(iter(self._strategy_loops.values()))
-                symbols = first_loop.config.symbols
+        # Run data-driven strategies with their own execution loops
+        # (parallel, with timeout, per the DataStrategyLoop design)
+        symbols: list[str] = []
+        if self._strategy_loops:
+            first_loop = next(iter(self._strategy_loops.values()))
+            symbols = first_loop.config.symbols
 
+        if self._data_strategy_service and self._data_strategy_ids:
             logger.info(
                 f"[iterate_all] Running {len(self._data_strategy_ids)} "
                 f"data strategies over {len(symbols)} symbols"
             )
-            for symbol in symbols:
-                try:
-                    all_signals = self._data_strategy_service.get_all_signals(symbol)
-                    for strategy_id, signal_result in all_signals.items():
-                        sig_entry = {
-                            "symbol": signal_result.symbol,
-                            "signal": signal_result.signal.value,
-                            "confidence": signal_result.metadata.get("confidence", 0.0),
-                            "reason": signal_result.reason,
-                        }
-                        if strategy_id not in results["strategies"]:
-                            results["strategies"][strategy_id] = {"status": "ok", "signals": []}
-                        results["strategies"][strategy_id]["signals"].append(sig_entry)
-                except Exception as e:
-                    logger.warning(f"Data strategy iteration failed for {symbol}: {e}")
+            data_results = self._iterate_data_strategies(symbols)
+
+            # Merge data strategy results into results["strategies"]
+            # These execute independently (not fed into conviction aggregation)
+            for strategy_id, result in data_results.items():
+                results["strategies"][strategy_id] = result
+
+        # Persist data strategy state after iteration (Finding 3A)
+        # State is persisted per-strategy in the LoopStateStore, but we also
+        # update the shared StrategyStateStore here so _evaluate_all can read it
+        for strategy_id in self._data_strategy_ids:
+            try:
+                # Ensure loop is created (lazy init)
+                self._get_data_strategy_loop(strategy_id)
+                state = self._state_store.load(strategy_id)
+                # Update current_metrics with latest signal counts from iterate
+                current = dict(state.current_metrics)
+
+                # Count signals from this iteration's results
+                strat_result = results["strategies"].get(strategy_id, {})
+                signals = strat_result.get("signals", [])
+                non_neutral = [s for s in signals if s.get("signal", "").upper() != "NEUTRAL"]
+                buys = [s for s in non_neutral if s.get("signal", "").upper() == "BUY"]
+
+                current["total_signals"] = current.get("total_signals", 0) + len(non_neutral)
+                if non_neutral:
+                    current["buy_rate"] = len(buys) / len(non_neutral)
+                    current["neutral_rate"] = (
+                        (len(signals) - len(non_neutral)) / len(signals) if signals else 0.0
+                    )
+
+                # Track consecutive neutral signals (capped at 15)
+                if signals and all(s.get("signal", "").upper() == "NEUTRAL" for s in signals):
+                    current["consecutive_neutral"] = min(
+                        current.get("consecutive_neutral", 0) + len(signals), 15
+                    )
+                else:
+                    current["consecutive_neutral"] = 0
+
+                new_state = StrategyState(
+                    strategy_id=strategy_id,
+                    stage=state.stage,
+                    stage_entered_at=state.stage_entered_at,
+                    current_metrics=current,
+                )
+                self._state_store.save(new_state)
+            except Exception as e:
+                logger.warning(f"Data strategy {strategy_id} state save error: {e}")
 
         # Aggregate signals per symbol across all strategies for conviction evaluation
         # Signal values from signal.value are lowercase: "buy", "sell", "neutral"
@@ -866,6 +995,39 @@ class StrategyOrchestrator:
 
             except Exception as e:
                 logger.error(f"Strategy {strategy_id} evaluation error: {e}")
+
+        # Evaluate data strategies (signal-quality stage gates)
+        for strategy_id in self._data_strategy_ids:
+            try:
+                state = self._state_store.load(strategy_id)
+                metrics = self._get_data_strategy_loop(strategy_id).get_signal_metrics(
+                    state.stage_entered_at
+                )
+
+                consecutive_neutral = state.current_metrics.get("consecutive_neutral", 0)
+
+                transition = self._evaluator.evaluate_signal_metrics(
+                    strategy_id=strategy_id,
+                    current_stage=state.stage,
+                    stage_entered_at=state.stage_entered_at,
+                    metrics=metrics,
+                    consecutive_neutral=consecutive_neutral,
+                )
+
+                if transition is not None:
+                    new_state = StrategyState(
+                        strategy_id=strategy_id,
+                        stage=transition.to_stage,
+                        stage_entered_at=datetime.utcnow(),
+                        current_metrics={"total_signals": 0, "consecutive_neutral": 0},
+                    )
+                    self._state_store.save(new_state)
+                    logger.info(
+                        f"Data strategy {strategy_id} transitioned to {transition.to_stage}"
+                    )
+
+            except Exception as e:
+                logger.error(f"Data strategy {strategy_id} evaluation error: {e}")
 
     def get_strategy_state(self, strategy_id: str) -> Optional[StrategyState]:
         """Get current state for a strategy (both price-series and data-driven)."""
