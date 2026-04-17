@@ -107,6 +107,7 @@ class TradingLoop:
                     self.config.data_connector = "yahoo_finance"
                     self._alpaca_market = None
             if self._alpaca_market is not None and self._alpaca_market.is_connected():
+                logger.info(f"[_ensure_data_connector] Using AlpacaMarketDataConnector")
                 return self._alpaca_market
             # Fall through to Yahoo Finance
 
@@ -125,18 +126,21 @@ class TradingLoop:
                     self.config.data_connector = "ccxt"
                     self._yahoo = None
             if self._yahoo is not None and self._yahoo.is_connected():
+                logger.info(f"[_ensure_data_connector] Using YahooFinanceConnector")
                 return self._yahoo
             # Fall through to CCXT
 
         if self._ccxt is None:
             self._ccxt = CCXTConnector({"exchange": self.config.exchange})
             self._ccxt.connect()
+        logger.info(f"[_ensure_data_connector] Using CCXTConnector/{self.config.exchange}")
         return self._ccxt
 
     def _ensure_alpaca(self) -> "AlpacaPaperConnector | DryRunConnector":
         """Lazily create and connect the trading connector based on mode."""
         if self._alpaca is None:
             self._alpaca = create_connector(self.config.mode)
+            logger.info(f"[_ensure_alpaca] Created connector: {self._alpaca.name} (mode={self.config.mode})")
             if self.config.mode != "dry_run":
                 self._alpaca.connect()
             self._executor = TradeExecutor(self._alpaca)
@@ -361,6 +365,9 @@ class TradingLoop:
             try:
                 # 1. Fetch price data
                 prices, latest_price, latest_bar_timestamp = self._fetch_prices(symbol)
+                logger.info(
+                    f"[_iterate_impl] {self.config.strategy}: fetched {len(prices)} bars for {symbol} @ {latest_price}"
+                )
                 result["signals"].append(
                     {
                         "symbol": symbol,
@@ -372,6 +379,9 @@ class TradingLoop:
                 # 2. Generate signal
                 signal = self._generate_signal(prices)
                 signal_str = signal.value if isinstance(signal, SignalType) else str(signal)
+                logger.info(
+                    f"[_iterate_impl] {self.config.strategy}/{symbol}: signal={signal_str}"
+                )
                 result["signals"][-1]["signal"] = signal_str
 
                 # 3. Check if we should exit

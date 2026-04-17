@@ -592,6 +592,11 @@ class StrategyOrchestrator:
         # Run all strategy iterations in parallel via ThreadPoolExecutor
         # skip_execution=True so we collect signals without executing trades;
         # conviction aggregation below decides what actually executes
+        logger.info(
+            f"[iterate_all] Starting iteration for {len(self._strategy_loops)} price strategies "
+            f"+ {len(self._data_strategy_ids)} data strategies"
+        )
+
         def run_strategy(
             strategy_id: str, strategy_loop: StrategyLoop
         ) -> tuple[str, dict[str, Any]]:
@@ -622,6 +627,12 @@ class StrategyOrchestrator:
                 try:
                     strategy_id, result = future.result(timeout=5)
                     results["strategies"][strategy_id] = result
+                    sig_count = len(result.get("signals", []))
+                    action_count = len(result.get("actions", []))
+                    logger.info(
+                        f"[iterate_all] Strategy {strategy_id}: "
+                        f"status={result.get('status')}, signals={sig_count}, actions={action_count}"
+                    )
                 except TimeoutError:
                     sid = futures[future]
                     logger.error(f"Strategy {sid} result timed out — continuing")
@@ -651,6 +662,7 @@ class StrategyOrchestrator:
                 first_loop = next(iter(self._strategy_loops.values()))
                 symbols = first_loop.config.symbols
 
+            logger.info(f"[iterate_all] Running {len(self._data_strategy_ids)} data strategies over {len(symbols)} symbols")
             for symbol in symbols:
                 try:
                     all_signals = self._data_strategy_service.get_all_signals(symbol)
@@ -668,6 +680,10 @@ class StrategyOrchestrator:
                     logger.warning(f"Data strategy iteration failed for {symbol}: {e}")
 
         # Aggregate signals per symbol across all strategies for conviction evaluation
+        logger.info(
+            f"[iterate_all] Signal counts before aggregation: "
+            f"{ {sid: len(r.get('signals', [])) for sid, r in results['strategies'].items()} }"
+        )
         num_strategies = len(self._strategy_loops) + len(self._data_strategy_ids)
         for strategy_id, strat_result in results["strategies"].items():
             if strat_result.get("status") == "error":
@@ -703,6 +719,11 @@ class StrategyOrchestrator:
                     f"Conviction met for {sym}: {counts['BUY']}/{num_strategies} strategies "
                     f"(threshold={min_required}) — will execute BUY"
                 )
+            else:
+                logger.info(
+                    f"[iterate_all] Conviction NOT met for {sym}: "
+                    f"BUY={counts['BUY']}, threshold={min_required}"
+                )
 
         # Execute conviction trades using the first strategy loop's executor
         # (all strategies share the same Alpaca account, so shared connector is safe)
@@ -725,7 +746,7 @@ class StrategyOrchestrator:
                     latest_price = None
                     for sid, sres in results["strategies"].items():
                         for sent in sres.get("signals", []):
-                            if sent.get("symbol") == sym:
+                            if sent.get("symbol") == sym and sent.get("price") is not None:
                                 latest_price = sent.get("price")
                                 break
                         if latest_price:
@@ -734,6 +755,11 @@ class StrategyOrchestrator:
                     if latest_price is None:
                         logger.warning(f"No price found for {sym} — skipping conviction execute")
                         continue
+
+                    logger.info(
+                        f"[conviction execute] {sym}: price={latest_price}, "
+                        f"qty will be calculated, limit_price=latest_price"
+                    )
 
                     # Check position not already open
                     if conviction_executor.has_position(sym):
