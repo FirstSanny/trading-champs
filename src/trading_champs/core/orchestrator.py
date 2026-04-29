@@ -1,0 +1,1124 @@
+"""StrategyOrchestrator manages multiple per-strategy trading loop instances."""
+
+import json
+import logging
+import sqlite3
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, wait
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Optional
+
+if TYPE_CHECKING:
+    from trading_champs.data.supabase_client import SupabaseClient
+    from trading_champs.signals.strategies.data_service import DataStrategyService
+
+from trading_champs.core.drift_detector import DriftDetector
+from trading_champs.core.drift_store import DriftStore
+from trading_champs.core.loop import TradingLoop
+from trading_champs.core.loop_state import LoopConfig, LoopStateStore
+from trading_champs.core.stage_config import STAGE_CONFIGS, StageConfig, get_stage_config
+from trading_champs.core.stage_evaluator import StageEvaluator, StrategyMetrics
+from trading_champs.core.stage_history import StageHistory
+from trading_champs.pl.tracker import PnLTracker
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class StrategyLoopConfig:
+    """Per-strategy loop configuration.
+
+    Extends LoopConfig with strategy identity and stage management fields.
+    """
+
+    strategy_id: str
+    strategy_name: str
+    stage: str = "dry_run"
+    stage_config: StageConfig = field(default_factory=lambda: get_stage_config("dry_run"))
+    # Inherits all LoopConfig fields
+    symbols: list[str] = field(default_factory=lambda: ["BTC/USDT"])
+    strategy: str = "ma_crossover"
+    interval_seconds: int = 60
+    position_size_fraction: float = 0.1
+    max_positions: int = 1
+    stop_loss_percent: float = 2.0
+    take_profit_percent: float = 4.0
+    data_connector: str = "ccxt"
+    exec_connector: str = "alpaca"
+    exchange: str = "binance"
+    timeframe: str = "1m"
+    lookback_bars: int = 100
+    fast_ma_period: int = 20
+    slow_ma_period: int = 50
+    mode: str = "dry_run"
+
+    def to_loop_config(self) -> LoopConfig:
+        """Convert to LoopConfig for use by TradingLoop.
+
+        position_size_fraction is derived from stage_config.capital_fraction.
+        """
+        effective_fraction = self.stage_config.capital_fraction if self.stage_config else 0.0
+        return LoopConfig(
+            symbols=self.symbols,
+            strategy=self.strategy,
+            interval_seconds=self.interval_seconds,
+            position_size_fraction=effective_fraction,
+            max_positions=self.max_positions,
+            stop_loss_percent=self.stop_loss_percent,
+            take_profit_percent=self.take_profit_percent,
+            data_connector=self.data_connector,
+            exec_connector=self.exec_connector,
+            exchange=self.exchange,
+            timeframe=self.timeframe,
+            lookback_bars=self.lookback_bars,
+            fast_ma_period=self.fast_ma_period,
+            slow_ma_period=self.slow_ma_period,
+            mode=self.stage,  # Use stage as the loop mode
+        )
+
+
+@dataclass
+class StrategyState:
+    """Per-strategy runtime state persisted to SQLite."""
+
+    strategy_id: str
+    stage: str
+    stage_entered_at: datetime
+    current_metrics: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict:
+        return {
+            "strategy_id": self.strategy_id,
+            "stage": self.stage,
+            "stage_entered_at": self.stage_entered_at.isoformat(),
+            "current_metrics": self.current_metrics,
+        }
+
+
+@dataclass
+class OrchestratorConfig:
+    """Configuration for the orchestrator itself."""
+
+    db_path: str = ".loop_state.db"
+    redis_url: str = "redis://localhost:6379/0"
+    lock_ttl_seconds: int = 120
+    watchlist_repository: Any = None  # WatchlistRepository instance, or None to skip
+    conviction_threshold: float = 0.5  # Fraction of strategies that must agree to execute (0.0-1.0)
+
+
+class StrategyLoop:
+    """A single strategy's trading loop wrapper.
+
+    Owns its own TradingLoop, PnLTracker, and per-strategy state.
+    """
+
+    def __init__(
+        self,
+        config: StrategyLoopConfig,
+        state_store: Optional[LoopStateStore] = None,
+        db_path: str = ".loop_state.db",
+    ):
+        self.config = config
+        self._state_store = state_store or LoopStateStore(
+            db_path=db_path.replace(".db", f"_{config.strategy_id}.db")
+        )
+        self._tracker: Optional[PnLTracker] = None
+        self._loop: Optional[TradingLoop] = None
+        self._drift_store: Optional[DriftStore] = None
+        self._drift_detector: Optional[DriftDetector] = None
+
+    @property
+    def tracker(self) -> PnLTracker:
+        if self._tracker is None:
+            self._tracker = PnLTracker()
+        return self._tracker
+
+    @property
+    def loop(self) -> TradingLoop:
+        if self._loop is None:
+            loop_config = self.config.to_loop_config()
+            self._loop = TradingLoop(
+                config=loop_config,
+                tracker=self.tracker,
+                state_store=self._state_store,
+            )
+        return self._loop
+
+    @property
+    def drift_store(self) -> DriftStore:
+        if self._drift_store is None:
+            self._drift_store = DriftStore()
+        return self._drift_store
+
+    @property
+    def drift_detector(self) -> DriftDetector:
+        if self._drift_detector is None:
+            self._drift_detector = DriftDetector(self.drift_store)
+        return self._drift_detector
+
+    def iterate(self, skip_execution: bool = False) -> dict[str, Any]:
+        """Run one iteration of this strategy's loop."""
+        try:
+            result = self.loop.iterate(
+                idempotency_key=f"orchestrator_{self.config.strategy_id}",
+                drift_detector=self.drift_detector,
+                skip_execution=skip_execution,
+            )
+
+            # Record dry_run fills for drift detection
+            if self.config.stage == "dry_run":
+                self._record_dry_run_fills(result)
+
+            return result
+        except Exception as e:
+            logger.error(f"Strategy {self.config.strategy_id} iterate error: {e}")
+            return {"status": "error", "strategy_id": self.config.strategy_id, "error": str(e)}
+
+    def _record_dry_run_fills(self, result: dict[str, Any]) -> None:
+        """Record dry_run fills from iterate result into DriftStore.
+
+        Called after a successful dry_run iterate to populate DriftStore
+        so DriftDetector can compare against paper fills.
+        """
+        from trading_champs.core.drift_store import DryRunFill
+
+        signals = result.get("signals", [])
+        actions = result.get("actions", [])
+
+        # Build symbol -> bar_timestamp map from signals
+        symbol_ts: dict[str, float] = {}
+        for sig in signals:
+            sym = sig.get("symbol")
+            ts_str = sig.get("bar_timestamp")
+            if sym and ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    symbol_ts[sym] = ts.timestamp()
+                except (ValueError, TypeError):
+                    pass
+
+        for action in actions:
+            sym = action.get("symbol")
+            if sym not in symbol_ts:
+                continue
+
+            bar_ts = int(symbol_ts[sym])
+            action_type = action.get("type")
+            status = action.get("status")
+            filled_price = action.get("price")  # filled_avg_price equivalent
+
+            if status != "filled" or not filled_price:
+                continue
+
+            if action_type == "enter":
+                fill = DryRunFill(
+                    symbol=sym,
+                    bar_timestamp=bar_ts,
+                    entry_price=filled_price,
+                    exit_price=None,
+                    side="long",
+                    fill_time=time.time(),
+                )
+                self.drift_detector.record_dry_run_fill(fill)
+            elif action_type == "exit":
+                fill = DryRunFill(
+                    symbol=sym,
+                    bar_timestamp=bar_ts,
+                    entry_price=None,
+                    exit_price=filled_price,
+                    side="long",
+                    fill_time=time.time(),
+                )
+                self.drift_detector.record_dry_run_fill(fill)
+
+    def get_metrics(self, stage_entered_at: datetime) -> StrategyMetrics:
+        """Compute metrics from the tracker for stage evaluation."""
+        closed_trades = self.tracker.trade_log.get_closed_trades()
+
+        total_trades = len(closed_trades)
+        if total_trades == 0:
+            return StrategyMetrics(
+                total_trades=0,
+                win_rate=0.0,
+                current_drawdown_pct=0.0,
+                sharpe_ratio=None,
+                days_in_stage=(datetime.utcnow() - stage_entered_at).days,
+                total_pnl_pct=0.0,
+            )
+
+        winning_trades = sum(1 for t in closed_trades if t.pnl is not None and t.pnl > 0)
+        win_rate = winning_trades / total_trades
+
+        # Calculate current drawdown from trade log equity progression
+        running_equity = self.tracker.initial_balance
+        equity_points = [running_equity]
+        for t in sorted(closed_trades, key=lambda x: x.exit_time or x.entry_time):
+            if t.pnl is not None:
+                running_equity += t.pnl
+            equity_points.append(running_equity)
+
+        if len(equity_points) > 1:
+            peak = max(equity_points)
+            current = equity_points[-1]
+            drawdown_pct = ((peak - current) / peak * 100) if peak > 0 else 0.0
+        else:
+            drawdown_pct = 0.0
+
+        # Calculate Sharpe ratio (simplified: annualized return / annualized std)
+        if len(equity_points) > 10:
+            returns = [
+                equity_points[i] - equity_points[i - 1] for i in range(1, len(equity_points))
+            ]
+            if returns:
+                import statistics
+
+                mean_return = statistics.mean(returns)
+                std_return = statistics.stdev(returns) if len(returns) > 1 else 0.0
+                sharpe = (mean_return / std_return * (252**0.5)) if std_return > 0 else None
+            else:
+                sharpe = None
+        else:
+            sharpe = None
+
+        total_pnl = sum(t.pnl for t in closed_trades if t.pnl is not None)
+        total_pnl_pct = (
+            (total_pnl / self.tracker.current_balance * 100)
+            if self.tracker.current_balance > 0
+            else 0.0
+        )
+
+        return StrategyMetrics(
+            total_trades=total_trades,
+            win_rate=win_rate,
+            current_drawdown_pct=drawdown_pct,
+            sharpe_ratio=sharpe,
+            days_in_stage=(datetime.utcnow() - stage_entered_at).days,
+            total_pnl_pct=total_pnl_pct,
+        )
+
+
+class StrategyStateStore:
+    """Persists per-strategy StrategyState to Supabase with SQLite/in-memory fallback.
+
+    Priority: Supabase (primary) -> SQLite (fallback) -> in-memory (last resort).
+    """
+
+    def __init__(
+        self,
+        db_path: str = ".loop_state.db",
+        supabase: Optional["SupabaseClient"] = None,
+    ):
+        self._db_path = db_path
+        self._supabase = supabase
+        self._lock = threading.Lock()
+        self._db_initialized = False
+        self._in_memory: dict[str, StrategyState] = {}
+        try:
+            self._init_db()
+            self._db_initialized = True
+        except Exception as e:
+            logger.warning(
+                f"StrategyStateStore[{db_path}]: SQLite unavailable ({e})" " — using fallback"
+            )
+            self._db_initialized = False
+
+    def _init_db(self) -> None:
+        with self._lock:
+            Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+            conn = sqlite3.connect(self._db_path)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS strategy_state (
+                    strategy_id TEXT PRIMARY KEY,
+                    stage TEXT NOT NULL,
+                    stage_entered_at TEXT NOT NULL,
+                    current_metrics TEXT NOT NULL DEFAULT '{}'
+                )
+                """)
+            conn.commit()
+            conn.close()
+
+    def _default_state(self, strategy_id: str) -> StrategyState:
+        return StrategyState(
+            strategy_id=strategy_id,
+            stage="dry_run",
+            stage_entered_at=datetime.utcnow(),
+            current_metrics={},
+        )
+
+    def load(self, strategy_id: str) -> StrategyState:
+        """Load state for a strategy, returning defaults if not found."""
+        # 1. Try Supabase
+        if self._supabase is not None and self._supabase.is_connected():
+            try:
+                row = self._supabase.get_strategy_state(strategy_id)
+                if row:
+                    return StrategyState(
+                        strategy_id=row["strategy_id"],
+                        stage=row["stage"],
+                        stage_entered_at=datetime.fromisoformat(row["stage_entered_at"]),
+                        current_metrics=row.get("current_metrics", {}),
+                    )
+            except Exception as e:
+                logger.warning(f"StrategyStateStore: Supabase load failed ({e}), trying SQLite")
+
+        # 2. Fall back to SQLite
+        if self._db_initialized:
+            try:
+                with self._lock:
+                    conn = sqlite3.connect(self._db_path)
+                    conn.row_factory = sqlite3.Row
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "SELECT * FROM strategy_state WHERE strategy_id = ?",
+                        (strategy_id,),
+                    )
+                    row = cursor.fetchone()
+                    conn.close()
+
+                    if row is not None:
+                        return StrategyState(
+                            strategy_id=row["strategy_id"],
+                            stage=row["stage"],
+                            stage_entered_at=datetime.fromisoformat(row["stage_entered_at"]),
+                            current_metrics=json.loads(row["current_metrics"]),
+                        )
+            except Exception as e:
+                logger.warning(f"StrategyStateStore: SQLite load failed ({e}), using in-memory")
+
+        # 3. Fall back to in-memory
+        return self._in_memory.get(strategy_id) or self._default_state(strategy_id)
+
+    def save(self, state: StrategyState) -> None:
+        """Persist strategy state to Supabase first, then SQLite."""
+        # 1. Try Supabase
+        if self._supabase is not None and self._supabase.is_connected():
+            try:
+                ok = self._supabase.save_strategy_state(
+                    strategy_id=state.strategy_id,
+                    stage=state.stage,
+                    stage_entered_at=state.stage_entered_at.isoformat(),
+                    current_metrics=state.current_metrics,
+                )
+                if ok:
+                    return
+            except Exception as e:
+                logger.warning(f"StrategyStateStore: Supabase save failed ({e}), trying SQLite")
+
+        # 2. Fall back to SQLite
+        if self._db_initialized:
+            try:
+                with self._lock:
+                    conn = sqlite3.connect(self._db_path)
+                    conn.execute(
+                        """
+                        INSERT OR REPLACE INTO strategy_state
+                        (strategy_id, stage, stage_entered_at, current_metrics)
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        (
+                            state.strategy_id,
+                            state.stage,
+                            state.stage_entered_at.isoformat(),
+                            json.dumps(state.current_metrics),
+                        ),
+                    )
+                    conn.commit()
+                    conn.close()
+                return
+            except Exception as e:
+                logger.warning(f"StrategyStateStore: SQLite save failed ({e}), using in-memory")
+
+        # 3. Fall back to in-memory
+        self._in_memory[state.strategy_id] = state
+
+
+class StrategyOrchestrator:
+    """Orchestrates multiple per-strategy trading loop instances.
+
+    Owns N StrategyLoop instances, each with its own connector, PnLTracker,
+    and stage state. After each iterate_all(), runs StageEvaluator on each
+    strategy and logs transitions to StageHistory.
+
+    If no strategies list is provided, automatically creates one StrategyLoopConfig
+    per entry in STRATEGY_REGISTRY (signals/strategies/__init__.py), each starting
+    at dry_run stage. STRATEGY_REGISTRY is the single source of truth.
+    """
+
+    def __init__(
+        self,
+        strategies: Optional[list[StrategyLoopConfig]] = None,
+        config: Optional[OrchestratorConfig] = None,
+        evaluate_mode: bool = False,
+        strategy_defaults: Optional[dict] = None,
+        supabase: Optional["SupabaseClient"] = None,
+        data_strategy_service: Optional["DataStrategyService"] = None,
+        data_strategy_ids: Optional[list[str]] = None,
+    ):
+        """Initialize the orchestrator.
+
+        Args:
+            strategies: Optional list of per-strategy loop configurations.
+                If omitted, one config per STRATEGY_REGISTRY entry is auto-created.
+            config: Orchestrator-level configuration.
+            evaluate_mode: If True, evaluate gates but do NOT trigger transitions.
+            strategy_defaults: Field overrides applied to each auto-created config
+                (e.g. {'symbols': ['BTC/USDT'], 'timeframe': '4h'}).
+            supabase: Supabase client for state persistence across cold starts.
+            data_strategy_service: Optional DataStrategyService for running
+                data-driven strategies (CEO Twitter, news NLP, etc.) alongside
+                price-series strategies in the conviction loop.
+            data_strategy_ids: List of data strategy IDs to manage state for
+                (must match keys in DATA_STRATEGY_REGISTRY).
+        """
+        self._config = config or OrchestratorConfig()
+        self._evaluate_mode = evaluate_mode
+        self._conviction_threshold = self._config.conviction_threshold
+
+        # State store for per-strategy state
+        self._state_store = StrategyStateStore(
+            db_path=self._config.db_path,
+            supabase=supabase,
+        )
+
+        # Stage history
+        self._stage_history = StageHistory(
+            db_path=self._config.db_path,
+            supabase=supabase,
+        )
+
+        # Stage evaluator
+        self._evaluator = StageEvaluator(
+            stage_history=self._stage_history,
+            evaluate_mode=evaluate_mode,
+        )
+
+        # Build strategy configs: use provided list OR auto-create from registry
+        if strategies is None:
+            from trading_champs.signals.strategies import create_orchestrator_configs
+
+            strategies = create_orchestrator_configs(
+                StrategyLoopConfig,
+                defaults=strategy_defaults,
+            )
+
+        # Drift detectors per strategy (for paper/live strategies)
+        self._strategy_loops: dict[str, StrategyLoop] = {}
+        for strategy_config in strategies:
+            strategy_state = self._state_store.load(strategy_config.strategy_id)
+            # Override stage from config with persisted state
+            strategy_config.stage = strategy_state.stage
+            strategy_config.stage_config = get_stage_config(strategy_state.stage)
+
+            self._strategy_loops[strategy_config.strategy_id] = StrategyLoop(
+                config=strategy_config,
+                db_path=self._config.db_path,
+            )
+
+        # Data strategy service (for CEO Twitter, news NLP, social trading, etc.)
+        self._data_strategy_service = data_strategy_service
+        self._data_strategy_ids: list[str] = data_strategy_ids or []
+        # Data strategy states are created lazily on first iterate_all() via the
+        # StrategyStateStore.load() default-state fallback — no pre-initialization
+        # needed; avoids Supabase connection overhead on cold starts.
+        self._data_strategy_loops: dict[str, Any] = {}  # lazy init
+
+        # Shared PnLTracker for data strategies (mirrors price strategy pattern)
+        self._data_tracker: Optional[PnLTracker] = None
+
+    @property
+    def data_tracker(self) -> PnLTracker:
+        """Get the shared PnLTracker for data strategies."""
+        if self._data_tracker is None:
+            self._data_tracker = PnLTracker()
+        return self._data_tracker
+
+    def _get_data_strategy_loop(self, strategy_id: str) -> Any:
+        """Get or create a DataStrategyLoop for a data strategy.
+
+        Args:
+            strategy_id: Strategy ID from DATA_STRATEGY_REGISTRY.
+
+        Returns:
+            DataStrategyLoop instance.
+        """
+        if strategy_id not in self._data_strategy_loops:
+            from trading_champs.core.data_strategy_loop import (
+                DataStrategyLoop,
+                DataStrategyLoopConfig,
+            )
+
+            # Load state to get stage and symbols
+            state = self._state_store.load(strategy_id)
+            symbols = []
+            if self._strategy_loops:
+                first_loop = next(iter(self._strategy_loops.values()))
+                symbols = first_loop.config.symbols
+
+            config = DataStrategyLoopConfig(
+                strategy_id=strategy_id,
+                symbols=symbols,
+                position_size_fraction=state.current_metrics.get("position_size_fraction", 0.1),
+                max_positions=3,
+                stop_loss_percent=2.0,
+                mode=state.stage,
+            )
+
+            self._data_strategy_loops[strategy_id] = DataStrategyLoop(
+                strategy_id=strategy_id,
+                config=config,
+                tracker=self.data_tracker,
+                data_service=self._data_strategy_service,
+            )
+
+        return self._data_strategy_loops[strategy_id]
+
+    def _iterate_data_strategies(self, symbols: list[str]) -> dict[str, Any]:
+        """Run all data strategy loops in parallel and collect results.
+
+        Args:
+            symbols: List of symbols to analyze.
+
+        Returns:
+            Dict mapping strategy_id to iteration result.
+        """
+        results: dict[str, Any] = {}
+
+        if not self._data_strategy_service or not self._data_strategy_ids:
+            return results
+
+        def run_data_strategy(strategy_id: str) -> tuple[str, dict[str, Any]]:
+            try:
+                loop = self._get_data_strategy_loop(strategy_id)
+                result = loop.iterate()
+                return strategy_id, result
+            except Exception as e:
+                logger.error(f"Data strategy {strategy_id} error: {e}")
+                return strategy_id, {
+                    "status": "error",
+                    "strategy_id": strategy_id,
+                    "error": str(e),
+                }
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(run_data_strategy, sid): sid for sid in self._data_strategy_ids
+            }
+            done, not_done = wait(futures, timeout=60)
+            for future in done:
+                try:
+                    strategy_id, result = future.result(timeout=5)
+                    results[strategy_id] = result
+                except TimeoutError:
+                    sid = futures[future]
+                    logger.error(f"Data strategy {sid} result timed out")
+                    results[sid] = {"status": "error", "strategy_id": sid, "error": "timeout"}
+            for future in not_done:
+                sid = futures[future]
+                future.cancel()
+                logger.warning(f"Data strategy {sid} timed out after 60s — cancelling")
+                results[sid] = {"status": "error", "strategy_id": sid, "error": "timeout"}
+
+        return results
+
+    def iterate_all(self, idempotency_key: Optional[str] = None) -> dict[str, Any]:
+        """Run one iteration across all strategy loops.
+
+        Idempotency is handled at the per-strategy level via each
+        TradingLoop.iterate()'s idempotency key (e.g. "orchestrator_rsi").
+        Two Vercel instances running iterate_all() simultaneously will each
+        run all strategies, but per-strategy idempotency ensures each
+        strategy only executes once across both instances.
+
+        Args:
+            idempotency_key: Optional idempotency key (ignored at orchestrator
+                level; per-strategy idempotency keys handle deduplication).
+
+        Returns:
+            Dict with results for each strategy.
+        """
+        return self._iterate_all_impl()
+
+    def _refresh_symbols_from_watchlist(self) -> None:
+        """Fetch enabled symbols from watchlist and distribute across strategy loops.
+
+        Symbols are distributed round-robin across all strategy loops so each
+        strategy sees a non-overlapping subset. If watchlist_repository is None,
+        this is a no-op (env-var symbols are used instead).
+        """
+        if self._config.watchlist_repository is None:
+            return
+
+        try:
+            symbols = self._config.watchlist_repository.get_enabled_symbols()
+        except Exception as e:
+            logger.warning("Watchlist fetch failed, symbols unchanged: %s", e)
+            return
+
+        if not symbols:
+            return
+
+        # Broadcast all symbols to ALL strategy loops (conviction trading)
+        # Every strategy analyzes every symbol — conviction is evaluated across strategies
+        loops = list(self._strategy_loops.values())
+        for loop in loops:
+            loop.config.symbols = symbols
+            loop.loop.config.symbols = symbols
+
+        logger.debug(
+            "Watchlist: broadcast %d symbols to all %d strategy loops",
+            len(symbols),
+            len(loops),
+        )
+
+    def _iterate_all_impl(self) -> dict[str, Any]:
+        """Internal iterate_all implementation (called after lock acquired)."""
+        results: dict[str, Any] = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "strategies": {},
+        }
+        # Pre-initialize signal counts so data strategy block can write to it
+        symbol_signal_counts: dict[str, dict[str, int]] = {}
+
+        try:
+            # Refresh symbols from watchlist DB before iterating (with timeout)
+            self._refresh_symbols_from_watchlist()
+        except Exception as e:
+            logger.warning("Watchlist refresh failed, continuing with env symbols: %s", e)
+
+        # Run all strategy iterations in parallel via ThreadPoolExecutor
+        # skip_execution=True so we collect signals without executing trades;
+        # conviction aggregation below decides what actually executes
+        logger.info(
+            f"[iterate_all] Starting iteration for {len(self._strategy_loops)} price strategies "
+            f"+ {len(self._data_strategy_ids)} data strategies"
+        )
+
+        def run_strategy(
+            strategy_id: str, strategy_loop: StrategyLoop
+        ) -> tuple[str, dict[str, Any]]:
+            try:
+                # Update position_size_fraction from current stage_config before iterate
+                current_fraction = strategy_loop.config.stage_config.capital_fraction
+                strategy_loop.loop.config.position_size_fraction = current_fraction
+
+                result = strategy_loop.iterate(skip_execution=True)
+                return strategy_id, result
+            except Exception as e:
+                logger.error(f"Strategy {strategy_id} error in iterate_all: {e}")
+                return strategy_id, {
+                    "status": "error",
+                    "strategy_id": strategy_id,
+                    "error": str(e),
+                }
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(run_strategy, sid, slo): sid
+                for sid, slo in self._strategy_loops.items()
+            }
+            # Wait for all futures with a total timeout so the whole iterate_all
+            # doesn't hang beyond ~45s (leaves time for release in finally block)
+            done, not_done = wait(futures, timeout=45)
+            for future in done:
+                try:
+                    strategy_id, result = future.result(timeout=5)
+                    results["strategies"][strategy_id] = result
+                    sig_count = len(result.get("signals", []))
+                    action_count = len(result.get("actions", []))
+                    logger.info(
+                        f"[iterate_all] {strategy_id}: "
+                        f"s={sig_count} a={action_count} st={result.get('status')}"
+                    )
+                except TimeoutError:
+                    sid = futures[future]
+                    logger.error(f"Strategy {sid} result timed out — continuing")
+                    results["strategies"][sid] = {
+                        "status": "error",
+                        "strategy_id": sid,
+                        "error": "result timed out after 5s",
+                    }
+            for future in not_done:
+                sid = futures[future]
+                future.cancel()
+                logger.warning(f"Strategy {sid} future not done after 45s timeout — cancelling")
+                results["strategies"][sid] = {
+                    "status": "error",
+                    "strategy_id": sid,
+                    "error": "iterate timed out after 45s total",
+                }
+
+        # Run data-driven strategies with their own execution loops
+        # (parallel, with timeout, per the DataStrategyLoop design)
+        symbols: list[str] = []
+        if self._strategy_loops:
+            first_loop = next(iter(self._strategy_loops.values()))
+            symbols = first_loop.config.symbols
+
+        if self._data_strategy_service and self._data_strategy_ids:
+            logger.info(
+                f"[iterate_all] Running {len(self._data_strategy_ids)} "
+                f"data strategies over {len(symbols)} symbols"
+            )
+            data_results = self._iterate_data_strategies(symbols)
+
+            # Merge data strategy results into results["strategies"]
+            # These execute independently (not fed into conviction aggregation)
+            for strategy_id, result in data_results.items():
+                results["strategies"][strategy_id] = result
+
+        # Persist data strategy state after iteration (Finding 3A)
+        # State is persisted per-strategy in the LoopStateStore, but we also
+        # update the shared StrategyStateStore here so _evaluate_all can read it
+        for strategy_id in self._data_strategy_ids:
+            try:
+                # Ensure loop is created (lazy init)
+                self._get_data_strategy_loop(strategy_id)
+                state = self._state_store.load(strategy_id)
+                # Update current_metrics with latest signal counts from iterate
+                current = dict(state.current_metrics)
+
+                # Count signals from this iteration's results
+                strat_result = results["strategies"].get(strategy_id, {})
+                signals = strat_result.get("signals", [])
+                non_neutral = [s for s in signals if s.get("signal", "").upper() != "NEUTRAL"]
+                buys = [s for s in non_neutral if s.get("signal", "").upper() == "BUY"]
+
+                current["total_signals"] = current.get("total_signals", 0) + len(non_neutral)
+                if non_neutral:
+                    current["buy_rate"] = len(buys) / len(non_neutral)
+                    current["neutral_rate"] = (
+                        (len(signals) - len(non_neutral)) / len(signals) if signals else 0.0
+                    )
+
+                # Track consecutive neutral signals (capped at 15)
+                if signals and all(s.get("signal", "").upper() == "NEUTRAL" for s in signals):
+                    current["consecutive_neutral"] = min(
+                        current.get("consecutive_neutral", 0) + len(signals), 15
+                    )
+                else:
+                    current["consecutive_neutral"] = 0
+
+                new_state = StrategyState(
+                    strategy_id=strategy_id,
+                    stage=state.stage,
+                    stage_entered_at=state.stage_entered_at,
+                    current_metrics=current,
+                )
+                self._state_store.save(new_state)
+            except Exception as e:
+                logger.warning(f"Data strategy {strategy_id} state save error: {e}")
+
+        # Aggregate signals per symbol across all strategies for conviction evaluation
+        # Signal values from signal.value are lowercase: "buy", "sell", "neutral"
+        # Map them to the uppercase keys in symbol_signal_counts
+        sig_counts = {sid: len(r.get("signals", [])) for sid, r in results["strategies"].items()}
+        logger.info(f"[iterate_all] Signal counts before aggregation: {sig_counts}")
+        num_strategies = len(self._strategy_loops) + len(self._data_strategy_ids)
+        for strategy_id, strat_result in results["strategies"].items():
+            if strat_result.get("status") == "error":
+                continue
+            for sig_entry in strat_result.get("signals", []):
+                sym = sig_entry.get("symbol")
+                sig = sig_entry.get("signal", "").upper()  # Normalize to uppercase
+                if sym and sig:
+                    if sym not in symbol_signal_counts:
+                        symbol_signal_counts[sym] = {"BUY": 0, "HOLD": 0, "SELL": 0}
+                    if sig in symbol_signal_counts[sym]:
+                        symbol_signal_counts[sym][sig] += 1
+
+        # Evaluate conviction: execute BUY if threshold of strategies agree
+        conviction_trades: list[dict] = []
+        threshold_count = int(self._conviction_threshold * num_strategies)
+        # Require at least 2 strategies to agree
+        # (avoids 1-strategy conviction on small num_strategies)
+        min_required = max(2, threshold_count)
+
+        for sym, counts in symbol_signal_counts.items():
+            if counts["BUY"] >= min_required:
+                conviction_trades.append(
+                    {
+                        "symbol": sym,
+                        "signal": "BUY",
+                        "conviction_count": counts["BUY"],
+                        "total_strategies": num_strategies,
+                        "all_counts": counts,
+                    }
+                )
+                logger.info(
+                    f"Conviction met for {sym}: {counts['BUY']}/{num_strategies} strategies "
+                    f"(threshold={min_required}) — will execute BUY"
+                )
+            else:
+                logger.info(
+                    f"[iterate_all] Conviction NOT met for {sym}: "
+                    f"BUY={counts['BUY']}, threshold={min_required}"
+                )
+
+        # Execute conviction trades using the first strategy loop's executor
+        # (all strategies share the same Alpaca account, so shared connector is safe)
+        results["conviction"] = {
+            "threshold": self._conviction_threshold,
+            "threshold_count": min_required,
+            "num_strategies": num_strategies,
+            "symbol_counts": symbol_signal_counts,
+            "trades": [],
+        }
+
+        if conviction_trades:
+            first_loop = next(iter(self._strategy_loops.values()))
+            conviction_executor = first_loop.loop.executor
+
+            for trade in conviction_trades:
+                sym = trade["symbol"]
+                try:
+                    # Get latest price from the first strategy's signals
+                    latest_price = None
+                    for sid, sres in results["strategies"].items():
+                        for sent in sres.get("signals", []):
+                            if sent.get("symbol") == sym and sent.get("price") is not None:
+                                latest_price = sent.get("price")
+                                break
+                        if latest_price:
+                            break
+
+                    if latest_price is None:
+                        logger.warning(f"No price found for {sym} — skipping conviction execute")
+                        continue
+
+                    logger.info(
+                        f"[conviction execute] {sym}: price={latest_price}, "
+                        f"qty will be calculated, limit_price=latest_price"
+                    )
+
+                    # Check position not already open
+                    if conviction_executor.has_position(sym):
+                        logger.info(f"Conviction BUY for {sym} skipped — position already open")
+                        continue
+
+                    # Calculate position size
+                    position_size = first_loop.loop._calculate_position_size(latest_price)
+                    if position_size <= 0:
+                        logger.info(f"Conviction BUY for {sym} skipped — zero position size")
+                        continue
+
+                    # Execute conviction BUY directly via the shared executor
+                    exec_result = conviction_executor.open_long(
+                        symbol=sym,
+                        qty=position_size,
+                        tracker=first_loop.tracker,
+                        strategy="conviction",
+                        order_type="market",
+                        limit_price=latest_price,
+                    )
+                    results["conviction"]["trades"].append(
+                        {
+                            "symbol": sym,
+                            "qty": position_size,
+                            "price": latest_price,
+                            "status": exec_result.status.value,
+                            "conviction_count": trade["conviction_count"],
+                        }
+                    )
+                    logger.info(
+                        f"Conviction BUY executed for {sym}: qty={position_size}, "
+                        f"price={latest_price}, status={exec_result.status.value}"
+                    )
+                except Exception as e:
+                    logger.error(f"Conviction execute failed for {sym}: {e}")
+                    results["conviction"]["trades"].append(
+                        {
+                            "symbol": sym,
+                            "error": str(e),
+                        }
+                    )
+
+        # Update stages from state store (sequential — DB writes)
+        for strategy_id, strategy_loop in self._strategy_loops.items():
+            try:
+                strategy_state = self._state_store.load(strategy_id)
+                strategy_loop.config.stage = strategy_state.stage
+                strategy_loop.config.stage_config = get_stage_config(strategy_state.stage)
+            except Exception as e:
+                logger.error(f"Strategy {strategy_id} stage update error: {e}")
+
+        # After all strategies iterate, evaluate stage transitions
+        self._evaluate_all()
+
+        return results
+
+    def _evaluate_all(self) -> None:
+        """Evaluate stage gates for all strategies and log transitions."""
+        for strategy_id, strategy_loop in self._strategy_loops.items():
+            try:
+                strategy_state = self._state_store.load(strategy_id)
+                metrics = strategy_loop.get_metrics(strategy_state.stage_entered_at)
+
+                # Consecutive demotions tracked in current_metrics
+                consecutive_demotions = strategy_state.current_metrics.get(
+                    "consecutive_demotions", 0
+                )
+
+                transition = self._evaluator.evaluate(
+                    strategy_id=strategy_id,
+                    current_stage=strategy_loop.config.stage,
+                    stage_entered_at=strategy_state.stage_entered_at,
+                    metrics=metrics,
+                    consecutive_demotions=consecutive_demotions,
+                )
+
+                if transition is not None:
+                    # Build updated metrics dict: preserve consecutive_demotions counter
+                    new_metrics_dict = dict(metrics.__dict__)
+                    if transition.trigger == "auto_demotion":
+                        new_metrics_dict["consecutive_demotions"] = consecutive_demotions + 1
+                    else:
+                        # Reset counter on promotion or archival
+                        new_metrics_dict["consecutive_demotions"] = 0
+
+                    # Update local config and state store
+                    strategy_loop.config.stage = transition.to_stage
+                    new_state = StrategyState(
+                        strategy_id=strategy_id,
+                        stage=transition.to_stage,
+                        stage_entered_at=datetime.utcnow(),
+                        current_metrics=new_metrics_dict,
+                    )
+                    self._state_store.save(new_state)
+
+                    # Update position_size_fraction from new stage
+                    new_stage_config = get_stage_config(transition.to_stage)
+                    strategy_loop.config.stage_config = new_stage_config
+                    logger.info(f"Strategy {strategy_id} transitioned to {transition.to_stage}")
+
+            except Exception as e:
+                logger.error(f"Strategy {strategy_id} evaluation error: {e}")
+
+        # Evaluate data strategies (signal-quality stage gates)
+        for strategy_id in self._data_strategy_ids:
+            try:
+                state = self._state_store.load(strategy_id)
+                metrics = self._get_data_strategy_loop(strategy_id).get_signal_metrics(
+                    state.stage_entered_at
+                )
+
+                consecutive_neutral = state.current_metrics.get("consecutive_neutral", 0)
+
+                transition = self._evaluator.evaluate_signal_metrics(
+                    strategy_id=strategy_id,
+                    current_stage=state.stage,
+                    stage_entered_at=state.stage_entered_at,
+                    metrics=metrics,
+                    consecutive_neutral=consecutive_neutral,
+                )
+
+                if transition is not None:
+                    new_state = StrategyState(
+                        strategy_id=strategy_id,
+                        stage=transition.to_stage,
+                        stage_entered_at=datetime.utcnow(),
+                        current_metrics={"total_signals": 0, "consecutive_neutral": 0},
+                    )
+                    self._state_store.save(new_state)
+                    logger.info(
+                        f"Data strategy {strategy_id} transitioned to {transition.to_stage}"
+                    )
+
+            except Exception as e:
+                logger.error(f"Data strategy {strategy_id} evaluation error: {e}")
+
+    def get_strategy_state(self, strategy_id: str) -> Optional[StrategyState]:
+        """Get current state for a strategy (both price-series and data-driven)."""
+        if strategy_id not in self._strategy_loops and strategy_id not in self._data_strategy_ids:
+            return None
+        return self._state_store.load(strategy_id)
+
+    def get_all_strategy_states(self) -> dict[str, StrategyState]:
+        """Get current state for all strategies (price-series and data-driven)."""
+        all_ids = list(self._strategy_loops.keys()) + self._data_strategy_ids
+        return {strategy_id: self._state_store.load(strategy_id) for strategy_id in all_ids}
+
+    def get_stage_history(self, strategy_id: str, limit: int = 50) -> list:
+        """Get stage history for a strategy."""
+        return self._stage_history.get_history(strategy_id, limit=limit)
+
+    def force_archive(
+        self,
+        strategy_id: str,
+        reason: str,
+        actor: str = "system",
+    ) -> StrategyState:
+        """Manually archive a strategy.
+
+        Args:
+            strategy_id: Strategy to archive.
+            reason: Reason for archiving.
+            actor: Who initiated.
+
+        Returns:
+            Updated StrategyState.
+        """
+        return self.force_stage(
+            strategy_id=strategy_id,
+            target_stage="archived",
+            reason=reason,
+            actor=actor,
+        )
+
+    def force_stage(
+        self,
+        strategy_id: str,
+        target_stage: str,
+        reason: str,
+        actor: str = "system",
+    ) -> StrategyState:
+        """Force a strategy to a specific stage (manual override).
+
+        Args:
+            strategy_id: Strategy to update.
+            target_stage: Stage to set.
+            reason: Reason for the override.
+            actor: Who initiated.
+
+        Returns:
+            Updated StrategyState.
+
+        Raises:
+            ValueError: If strategy_id or target_stage is invalid.
+        """
+        if strategy_id not in self._strategy_loops:
+            raise ValueError(f"Unknown strategy: {strategy_id}")
+
+        if target_stage not in STAGE_CONFIGS:
+            raise ValueError(f"Invalid stage: {target_stage}")
+
+        current_state = self._state_store.load(strategy_id)
+
+        self._evaluator.force_stage(
+            strategy_id=strategy_id,
+            current_stage=current_state.stage,
+            target_stage=target_stage,
+            reason=reason,
+            actor=actor,
+        )
+
+        # Carry over metrics but reset consecutive demotion counter
+        new_metrics = dict(current_state.current_metrics)
+        new_metrics["consecutive_demotions"] = 0
+
+        new_state = StrategyState(
+            strategy_id=strategy_id,
+            stage=target_stage,
+            stage_entered_at=datetime.utcnow(),
+            current_metrics=new_metrics,
+        )
+        self._state_store.save(new_state)
+
+        # Update strategy loop config
+        strategy_loop = self._strategy_loops[strategy_id]
+        strategy_loop.config.stage = target_stage
+        strategy_loop.config.stage_config = get_stage_config(target_stage)
+
+        return new_state
