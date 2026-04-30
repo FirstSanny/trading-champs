@@ -74,33 +74,81 @@ class SentimentScorer:
 
     def __init__(self) -> None:
         """Initialize VADER sentiment analyzer."""
-        if SentimentIntensityAnalyzer is None:
-            raise ImportError(
-                "vaderSentiment is required. Install with: pip install vaderSentiment"
-            )
-        self._analyzer = SentimentIntensityAnalyzer()
+        try:
+            from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+            self._analyzer = SentimentIntensityAnalyzer()
+            self._available = True
+        except ImportError:
+            self._analyzer = None
+            self._available = False
+
+    @property
+    def is_available(self) -> bool:
+        """Check if VADER is available."""
+        return self._available
 
     def score(self, text: str) -> float:
-        """Score text sentiment.
-
-        Args:
-            text: Input text to analyze.
-
-        Returns:
-            Compound sentiment score from -1 to +1.
-        """
+        """Score text sentiment."""
+        if not self._available:
+            return self._fallback_score(text)
         scores: dict[str, float] = self._analyzer.polarity_scores(text)
         return float(scores["compound"])
 
+    def _fallback_score(self, text: str) -> float:
+        """Fallback keyword-based sentiment scoring."""
+        text_lower = text.lower()
+        positive_words = [
+            "beat",
+            "surge",
+            "jump",
+            "rise",
+            "gain",
+            "grow",
+            "profit",
+            "upgrade",
+            "buy",
+            "bullish",
+            "strong",
+            "growth",
+            "innovative",
+            "partnership",
+            "launch",
+            "approval",
+            "acquire",
+            "moon",
+            "win",
+        ]
+        negative_words = [
+            "miss",
+            "fall",
+            "drop",
+            "decline",
+            "loss",
+            "cut",
+            "reduce",
+            "downgrade",
+            "sell",
+            "bearish",
+            "weak",
+            "investigation",
+            "fine",
+            "lawsuit",
+            "antitrust",
+            "regulation",
+            "dump",
+            "crush",
+            "dead",
+        ]
+        pos_count = sum(1 for w in positive_words if w in text_lower)
+        neg_count = sum(1 for w in negative_words if w in text_lower)
+        total = pos_count + neg_count
+        if total == 0:
+            return 0.0
+        return (pos_count - neg_count) / total
+
     def score_batch(self, texts: list[str]) -> list[float]:
-        """Score multiple texts.
-
-        Args:
-            texts: List of texts to analyze.
-
-        Returns:
-            List of compound sentiment scores.
-        """
+        """Score multiple texts."""
         return [self.score(text) for text in texts]
 
 
