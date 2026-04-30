@@ -188,6 +188,14 @@ class AlpacaMarketDataConnector(BaseConnector):
                     logger.warning(f"Alpaca Data API rate limited, retrying in {wait_time}s")
                     time.sleep(wait_time)
                     continue
+                # 400 Bad Request means unsupported symbol (e.g., crypto on stock API)
+                # Treat as ConnectionError so connector fallback chain works
+                if e.response is not None and e.response.status_code == 400:
+                    logger.warning(
+                        "Alpaca doesn't support %s (400 Bad Request), " "treating as unavailable",
+                        symbol,
+                    )
+                    raise ConnectionError(f"Alpaca 400 for {symbol}: unsupported")
                 logger.error(f"HTTP error fetching bars for {symbol}: {e}")
                 raise
             except Exception as e:
