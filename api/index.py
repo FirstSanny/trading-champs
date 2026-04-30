@@ -700,7 +700,10 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                 data_strategy_service = DataStrategyService()
 
                 # Per-strategy symbols: round-robin assign ORCHESTRATOR_SYMBOLS across registry keys
-                symbols_raw = os.environ.get("ORCHESTRATOR_SYMBOLS", "BTC/USDT")
+                symbols_raw = os.environ.get(
+                    "ORCHESTRATOR_SYMBOLS",
+                    "AAPL,MSFT,SPY,TSLA,NVDA,AMD,QQQ,GOOGL,META,AMZN,JPM,GS",
+                )
                 symbols_list = [s.strip() for s in symbols_raw.split(",") if s.strip()]
                 per_symbol = [symbols_list[i % len(symbols_list)] for i in range(len(strategy_ids))]
 
