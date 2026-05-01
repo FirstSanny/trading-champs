@@ -43,6 +43,29 @@ from trading_champs.pl.tracker import DailyPnL, PnLTracker, Trade, TradeSide
 logger = logging.getLogger(__name__)
 
 
+def _serialize_performance_metrics(m: PerformanceMetrics) -> dict:
+    """Serialize PerformanceMetrics with proper timedelta handling."""
+    return {
+        "total_return": m.total_return,
+        "total_return_percent": m.total_return_percent,
+        "sharpe_ratio": m.sharpe_ratio,
+        "max_drawdown": m.max_drawdown,
+        "max_drawdown_percent": m.max_drawdown_percent,
+        "win_rate": m.win_rate,
+        "profit_factor": m.profit_factor,
+        "avg_win": m.avg_win,
+        "avg_loss": m.avg_loss,
+        "num_trades": m.num_trades,
+        "num_wins": m.num_wins,
+        "num_losses": m.num_losses,
+        "largest_win": m.largest_win,
+        "largest_loss": m.largest_loss,
+        "avg_holding_time_seconds": (
+            m.avg_holding_time.total_seconds() if m.avg_holding_time else None
+        ),
+    }
+
+
 def serialize_dashboard_data(data: DashboardData) -> dict:
     """Convert DashboardData to JSON-serializable dict."""
 
@@ -70,7 +93,9 @@ def serialize_dashboard_data(data: DashboardData) -> dict:
             [_serialize_trade(t) for t in data.recent_trades] if data.recent_trades else []
         ),
         "performance_metrics": (
-            asdict(data.performance_metrics) if data.performance_metrics else None
+            _serialize_performance_metrics(data.performance_metrics)
+            if data.performance_metrics
+            else None
         ),
         "open_positions": data.open_positions,
         "alpaca_connected": data.alpaca_connected,
