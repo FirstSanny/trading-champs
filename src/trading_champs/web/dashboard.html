@@ -994,21 +994,15 @@
         /* ---- MAIN LOAD ---- */
         function loadDashboard() {
             hideError();
-            Promise.all([
-                fetchJSON(API_BASE + '/dashboard?mode=' + currentMode),
-                fetchJSON(API_BASE + '/equity-curve?mode=' + currentMode),
-                fetchJSON(API_BASE + '/strategy-curves?mode=' + currentMode),
-                fetchJSON(API_BASE + '/strategies/overview'),
-                fetchJSON(API_BASE + '/watchlist')
-            ])
-            .then(function(results) {
-                var dashData = results[0];
-                var curveData = results[1];
-                var stratData = results[2];
-                var strategiesOverview = results[3];
-                var watchlistData = results[4];
+            fetchJSON(API_BASE + '/dashboard/combined?mode=' + currentMode + '&days=30')
+            .then(function(result) {
+                var dashData = result.dashboard;
+                var curveData = result.equity_curve;
+                var stratData = result.strategy_curves;
+                var strategiesOverview = result.strategies_overview;
+                var watchlistData = result.watchlist;
 
-                if (dashData.error) showError(dashData.error + ' \u2014 Showing ' + dashData.mode + ' mode data.');
+                if (dashData && dashData.error) showError(dashData.error + ' \u2014 Showing ' + dashData.mode + ' mode data.');
 
                 initialBalance = dashData.initial_balance || 0;
                 allStrategies = stratData || {};
