@@ -444,6 +444,7 @@ def auth_guard(request: Request) -> JSONResponse | None:
     # Dashboard API is public - no auth required for main dashboard data
     if request.url.path in (
         "/api/dashboard",
+        "/api/dashboard/combined",
         "/api/equity-curve",
         "/api/strategy-curves",
         "/api/strategies/overview",
