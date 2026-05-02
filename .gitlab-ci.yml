@@ -86,8 +86,12 @@ deploy:seed-watchlist:
       python3 << 'PYEOF'
       import json, sys, os, urllib.request, urllib.error
 
-      env_url = os.environ.get("CI_ENVIRONMENT_URL", "").lstrip("https://").rstrip("/")
+      env_url = os.environ.get("CI_ENVIRONMENT_URL", "").lstrip("https://").lstrip("http://").rstrip("/")
       api_key = os.environ.get("WATCHLIST_API_KEY", "")
+
+      if not env_url or not api_key:
+          print("Seed skipped: CI_ENVIRONMENT_URL or WATCHLIST_API_KEY not set")
+          sys.exit(0)
 
       SYMBOL_CATALOG = {
           "ASML": {"company_name": "ASML Holding N.V.", "category": "semiconductor", "description": "EUV lithography — every AI chip goes through ASML", "exchange": "NASDAQ"},
