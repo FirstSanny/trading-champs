@@ -2,6 +2,7 @@
 """
 Seed script to add recommended symbols to the watchlist.
 Run: python scripts/seed_watchlist.py
+Requires: SUPABASE_URL, SUPABASE_SERVICE_KEY environment variables.
 """
 
 import os
@@ -11,6 +12,15 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from trading_champs.data.watchlist_repository import WatchlistRepository, get_watchlist_repository
+
+
+def _check_env() -> None:
+    """Fail fast if required env vars are missing."""
+    missing = [k for k in ("SUPABASE_URL", "SUPABASE_SERVICE_KEY") if not os.environ.get(k)]
+    if missing:
+        print(f"ERROR: Missing required environment variables: {', '.join(missing)}")
+        print("Set SUPABASE_URL and SUPABASE_SERVICE_KEY before running this script.")
+        sys.exit(1)
 
 
 # =============================================================================
@@ -163,6 +173,7 @@ def add_symbols(name: str, symbols: list[tuple[str, str]], repo: WatchlistReposi
 
 
 def main():
+    _check_env()
     repo: WatchlistRepository = get_watchlist_repository()
     
     print("=" * 60)

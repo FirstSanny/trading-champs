@@ -86,7 +86,7 @@ deploy:seed-watchlist:
       # Seed symbols via API
       curl -X POST "$CI_ENVIRONMENT_URL/api/watchlist/bulk" \
         -H "Content-Type: application/json" \
-        -H "X-API-Key: $WATCHLIST_API_KEY" \
+        -H "Authorization: Bearer $WATCHLIST_API_KEY" \
         -d '{
           "added_by": "ci:seed-2026-05",
           "entries": [

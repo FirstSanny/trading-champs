@@ -1,9 +1,12 @@
 #!/bin/bash
+set -euo pipefail
 # Monitor deployment status and verify watchlist symbols after deploy
-# Usage: ./scripts/monitor_deploy.sh
+# Usage: ./scripts/monitor_deploy.sh [PROJECT_ID] [COMMIT_SHA]
+#   PROJECT_ID  - Vercel project ID (defaults to $VERCEL_PROJECT_ID env var)
+#   COMMIT_SHA  - commit to monitor (defaults to current git HEAD)
 
-PROJECT_ID="prj_jPOWBQnZxJdRA9OSQRBYPs5G5i1t"
-COMMIT_SHA="d7f7766"
+PROJECT_ID="${1:-$VERCEL_PROJECT_ID}"
+COMMIT_SHA="${2:-$(git rev-parse HEAD)}"
 POLL_INTERVAL=10
 MAX_WAIT=300
 
@@ -15,7 +18,7 @@ echo ""
 
 # Get current deployment state
 get_deployment_state() {
-    curl -s "https://api.vercel.com/v1/projects/$PROJECT_ID" \
+    curl "https://api.vercel.com/v1/projects/$PROJECT_ID" \
         -H "Authorization: Bearer $VERCEL_ACCESS_TOKEN" | \
         jq '.latestDeployments[0] | {sha: .meta.gitCommitSha, state: .readyState, created: .createdAt}'
 }
@@ -40,9 +43,9 @@ while [ $elapsed -lt $MAX_WAIT ]; do
             # Query Supabase for new symbols
             echo ""
             echo "📈 New Stocks:"
-            curl -s "https://ivqyvyweiiyrbosvwkjq.supabase.co/rest/v1/watchlist_symbols?enabled=eq.true&select=symbol,asset_class&added_by=ilike.seed" \
-                -H "apikey: sb_publishable_iFyl77YCPxtti-CVP-VE_w_H7k19iIm" \
-                -H "Authorization: Bearer sb_publishable_iFyl77YCPxtti-CVP-VE_w_H7k19iIm" | \
+            curl "https://ivqyvyweiiyrbosvwkjq.supabase.co/rest/v1/watchlist_symbols?enabled=eq.true&select=symbol,asset_class&added_by=ilike.seed" \
+                -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+                -H "Authorization: Bearer $SUPABASE_PUBLISHABLE_KEY" | \
                 jq -r '.[] | "\(.symbol) (\(.asset_class))"'
             
             echo ""
