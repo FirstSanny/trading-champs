@@ -77,16 +77,20 @@ CHINESE_AI_STOCKS = [
     ("TCEHY", "stock"),     # Tencent ADR
     ("XI", "stock"),        # Xiaomi ADR
     
-    # Chinese AI Players (listed in US)
+    # Chinese AI Tigers - Hong Kong IPOs Jan 2026
+    ("0100.HK", "stock"),   # MiniMax - AI LLM, +109% debut Jan 9, 2026
+    ("2513.HK", "stock"),   # Zhipu AI - AGI, +13% debut Jan 8, 2026
+    ("2080.HK", "stock"),   # 01.AI (One AI) - Yi-LLM
+    
+    # Chinese AI Players (US ADRs)
     ("IQ", "stock"),        # iQIYI - Video/AI
-    ("MNSO", "stock"),      # MiHoYo - Gaming (private, skip if needed)
+    ("BILI", "stock"),      # Bilibili - Video/AI
+    ("DOYU", "stock"),      # Douyu - Gaming
+    ("YY", "stock"),        # YY - Live Streaming
     
     # Chinese Cloud/AI
     ("KEY", "stock"),       # KE Holdings (Beike) - AI Real Estate
     ("TAL", "stock"),       # TAL Education - AI Education
-    ("BILI", "stock"),      # Bilibili - Video/AI
-    ("DOYU", "stock"),      # Douyu - Gaming
-    ("YY", "stock"),        # YY - Live Streaming
 ]
 
 # =============================================================================
