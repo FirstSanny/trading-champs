@@ -79,7 +79,7 @@ deploy:seed-watchlist:
   before_script:
     - pip install --no-cache-dir requests
   script:
-    - python scripts/seed_watchlist_api.py "$CI_ENVIRONMENT_URL" "$WATCHLIST_API_KEY"
+    - python scripts/seed_watchlist_api.py "$CI_ENVIRONMENT_URL" "$WATCHLIST_API_KEY" "$SUPABASE_SERVICE_KEY"
   only:
     - main
   when: on_success
