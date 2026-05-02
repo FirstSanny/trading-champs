@@ -73,6 +73,82 @@ deploy:vercel:
     - tags
   when: on_success
 
+deploy:seed-watchlist:
+  stage: deploy
+  image: curlimages/curl:latest
+  script:
+    - |
+      echo "Seeding watchlist symbols after deployment..."
+      
+      # Wait for deployment to be ready
+      sleep 10
+      
+      # Seed symbols via API
+      curl -X POST "$CI_ENVIRONMENT_URL/api/watchlist/bulk" \
+        -H "Content-Type: application/json" \
+        -H "X-API-Key: $WATCHLIST_API_KEY" \
+        -d '{
+          "added_by": "ci:seed-2026-05",
+          "entries": [
+            {"symbol": "ASML", "asset_class": "stock"},
+            {"symbol": "TSM", "asset_class": "stock"},
+            {"symbol": "LRCX", "asset_class": "stock"},
+            {"symbol": "AMAT", "asset_class": "stock"},
+            {"symbol": "MRVL", "asset_class": "stock"},
+            {"symbol": "AVGO", "asset_class": "stock"},
+            {"symbol": "NVDA", "asset_class": "stock"},
+            {"symbol": "AMD", "asset_class": "stock"},
+            {"symbol": "NBIS", "asset_class": "stock"},
+            {"symbol": "GLW", "asset_class": "stock"},
+            {"symbol": "ARM", "asset_class": "stock"},
+            {"symbol": "GRPN", "asset_class": "stock"},
+            {"symbol": "SOUN", "asset_class": "stock"},
+            {"symbol": "LUNR", "asset_class": "stock"},
+            {"symbol": "DOCN", "asset_class": "stock"},
+            {"symbol": "AMPX", "asset_class": "stock"},
+            {"symbol": "PATH", "asset_class": "stock"},
+            {"symbol": "IONQ", "asset_class": "stock"},
+            {"symbol": "CRWD", "asset_class": "stock"},
+            {"symbol": "SNOW", "asset_class": "stock"},
+            {"symbol": "DDOG", "asset_class": "stock"},
+            {"symbol": "DKNG", "asset_class": "stock"},
+            {"symbol": "U", "asset_class": "stock"},
+            {"symbol": "BABA", "asset_class": "stock"},
+            {"symbol": "BIDU", "asset_class": "stock"},
+            {"symbol": "JD", "asset_class": "stock"},
+            {"symbol": "NTES", "asset_class": "stock"},
+            {"symbol": "PDD", "asset_class": "stock"},
+            {"symbol": "TCEHY", "asset_class": "stock"},
+            {"symbol": "XI", "asset_class": "stock"},
+            {"symbol": "0100.HK", "asset_class": "stock"},
+            {"symbol": "2513.HK", "asset_class": "stock"},
+            {"symbol": "2080.HK", "asset_class": "stock"},
+            {"symbol": "IQ", "asset_class": "stock"},
+            {"symbol": "BILI", "asset_class": "stock"},
+            {"symbol": "FET/USDT", "asset_class": "crypto"},
+            {"symbol": "TAO/USDT", "asset_class": "crypto"},
+            {"symbol": "RENDER/USDT", "asset_class": "crypto"},
+            {"symbol": "WLD/USDT", "asset_class": "crypto"},
+            {"symbol": "JUP/USDT", "asset_class": "crypto"},
+            {"symbol": "BLUR/USDT", "asset_class": "crypto"},
+            {"symbol": "TIA/USDT", "asset_class": "crypto"},
+            {"symbol": "STX/USDT", "asset_class": "crypto"},
+            {"symbol": "SUI/USDT", "asset_class": "crypto"},
+            {"symbol": "SEI/USDT", "asset_class": "crypto"},
+            {"symbol": "SOXX", "asset_class": "etf"},
+            {"symbol": "BOTZ", "asset_class": "etf"},
+            {"symbol": "ARKW", "asset_class": "etf"},
+            {"symbol": "IPO", "asset_class": "etf"},
+            {"symbol": "SKF", "asset_class": "etf"},
+            {"symbol": "DRIP", "asset_class": "etf"}
+          ]
+        }' || echo "Seed failed (might be duplicates - that's OK)"
+  only:
+    - main
+  when: manual
+  needs:
+    - deploy:vercel
+
 deploy:n8n:
   stage: deploy
   image: python:3.11
