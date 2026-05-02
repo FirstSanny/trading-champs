@@ -477,6 +477,9 @@ def main() -> None:
         sys.exit(1)
 
     api_url = sys.argv[1].rstrip("/")
+    if not api_url:
+        print("ERROR: CI_ENVIRONMENT_URL is not set — cannot seed")
+        sys.exit(1)
     api_key = sys.argv[2]
     supabase_service_key = (
         sys.argv[3] if len(sys.argv) > 3 else os.environ.get("SUPABASE_SERVICE_KEY", "")
