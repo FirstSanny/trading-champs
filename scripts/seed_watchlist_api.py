@@ -464,6 +464,16 @@ def get_asset_class(symbol: str) -> str:
     return "stock"
 
 
+def _normalize_symbol(symbol: str) -> str:
+    """Normalize exchange suffix from HK symbols for validation.
+
+    0100.HK → 0100 (stock), XI → XI (stock), etc.
+    """
+    if symbol.endswith(".HK"):
+        return symbol.split(".")[0]
+    return symbol
+
+
 def main() -> None:
     if len(sys.argv) < 3:
         print("Usage: seed_watchlist_api.py <api_url> <api_secret> [supabase_service_key]")
@@ -501,10 +511,12 @@ def main() -> None:
 
     entries = []
     for symbol, meta in SYMBOL_CATALOG.items():
+        normalized = _normalize_symbol(symbol)
+        asset_class = get_asset_class(normalized)
         entries.append(
             {
                 "symbol": symbol,
-                "asset_class": get_asset_class(symbol),
+                "asset_class": asset_class,
                 "metadata": {
                     "company_name": meta["company_name"],
                     "category": meta["category"],
