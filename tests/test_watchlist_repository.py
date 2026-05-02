@@ -231,8 +231,8 @@ class TestWatchlistRepositoryUnit:
         """Cache miss — fetches from DB and populates cache."""
         mock_client = MagicMock()
         mock_client._request.return_value = [
-            {"symbol": "AAPL"},
-            {"symbol": "BTC/USDT"},
+            {"id": "1", "symbol": "AAPL"},
+            {"id": "2", "symbol": "BTC/USDT"},
         ]
         repo = self._make_repo(mock_client)
         repo._cache = None  # ensure cache miss
