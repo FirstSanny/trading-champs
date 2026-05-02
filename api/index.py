@@ -320,8 +320,9 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
 
         provider.set_alpaca_connector(connector)
         return True, None
-    except Exception:
-        return False, f"Alpaca {mode} fetch failed"
+    except Exception as e:
+        logging.error("Alpaca %s fetch failed: %s", mode, e)
+        return False, f"Alpaca {mode} fetch failed: {e}"
 
 
 # Current Alpaca mode (paper or live)
@@ -528,9 +529,9 @@ def _fetch_watchlist_fast() -> dict:
         repo = _get_watchlist_repo()
         entries = repo.get_all_entries()
         return {"symbols": [e.to_dict() for e in entries]}
-    except Exception:
-        logging.warning("watchlist_api: _fetch_watchlist_fast failed, returning empty")
-        return {"symbols": []}
+    except Exception as e:
+        logging.error("_fetch_watchlist_fast failed: %s", e)
+        return {"symbols": [], "_error": str(e)}
 
 
 def _get_strategies_overview_fast() -> dict:
@@ -572,9 +573,9 @@ def _get_strategies_overview_fast() -> dict:
                 }
             )
         return {"strategies": result}
-    except Exception:
-        logging.warning("watchlist_api: _get_strategies_overview_fast failed, returning empty")
-        return {"strategies": []}
+    except Exception as e:
+        logging.error("_get_strategies_overview_fast failed: %s", e)
+        return {"strategies": [], "_error": str(e)}
 
 
 async def combined_dashboard_api(request: Request) -> JSONResponse:
@@ -593,23 +594,30 @@ async def combined_dashboard_api(request: Request) -> JSONResponse:
 
     try:
         equity_curve_data = provider.get_equity_curve(days, mode)
-    except Exception:
-        equity_curve_data = []
+    except Exception as e:
+        logging.error("combined_dashboard_api: equity_curve failed: %s", e)
+        equity_curve_data = {"_error": str(e)}
 
     try:
         strategy_curves_data = provider.get_strategy_equity_curves(days, mode)
-    except Exception:
-        strategy_curves_data = {}
+    except Exception as e:
+        logging.error("combined_dashboard_api: strategy_curves failed: %s", e)
+        strategy_curves_data = {"_error": str(e)}
 
     try:
         strategies_overview = _get_strategies_overview_fast()
-    except Exception:
-        strategies_overview = {"strategies": []}
+    except Exception as e:
+        logging.error("combined_dashboard_api: strategies_overview failed: %s", e)
+        strategies_overview = {"strategies": [], "_error": str(e)}
 
     try:
         watchlist_data = _fetch_watchlist_fast()
-    except Exception:
-        watchlist_data = {"symbols": []}
+    except Exception as e:
+        logging.error("combined_dashboard_api: watchlist failed: %s", e)
+        watchlist_data = {"symbols": [], "_error": str(e)}
+
+    sections = [equity_curve_data, strategy_curves_data, strategies_overview, watchlist_data]
+    has_errors = any(isinstance(v, dict) and v.get("_error") for v in sections)
 
     return JSONResponse(
         content={
@@ -618,6 +626,7 @@ async def combined_dashboard_api(request: Request) -> JSONResponse:
             "strategy_curves": strategy_curves_data,
             "strategies_overview": strategies_overview,
             "watchlist": watchlist_data,
+            "_has_errors": has_errors,
         }
     )
 

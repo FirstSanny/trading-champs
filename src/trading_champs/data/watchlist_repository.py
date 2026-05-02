@@ -98,9 +98,14 @@ class WatchlistEntry:
 
 @dataclass
 class _CacheEntry:
-    """Single cache slot for the watchlist cache."""
+    """Single cache slot for the watchlist cache.
 
-    symbols: list[str]
+    Stores full WatchlistEntry objects. Callers extract the fields they need:
+    - get_enabled_symbols() → [e.symbol for e in cache.entries]
+    - get_all_entries() → list(cache.entries)
+    """
+
+    entries: list[WatchlistEntry]
     timestamp: float
 
 
@@ -187,8 +192,8 @@ class WatchlistRepository:
         # Fast path: cache hit
         with self._lock:
             if self._cache_is_valid(self._cache):
-                logger.debug("Watchlist cache hit: %d symbols", len(self._cache.symbols))
-                return list(self._cache.symbols)
+                logger.debug("Watchlist cache hit: %d symbols", len(self._cache.entries))
+                return [e.symbol for e in self._cache.entries]
 
         # Cache miss or expired — fetch from DB
         try:
@@ -209,9 +214,9 @@ class WatchlistRepository:
                 if self._stale_cache is not None:
                     logger.warning(
                         "Returning stale watchlist cache (%d symbols)",
-                        len(self._stale_cache.symbols),
+                        len(self._stale_cache.entries),
                     )
-                    return list(self._stale_cache.symbols)
+                    return [e.symbol for e in self._stale_cache.entries]
             return []
 
         if not isinstance(rows, list):
@@ -220,10 +225,30 @@ class WatchlistRepository:
 
         symbols = [row["symbol"] for row in rows if row.get("symbol")]
 
-        # Populate cache
+        # Populate cache — store entries as full WatchlistEntry objects
+        entries_for_cache: list[WatchlistEntry] = []
+        for row in rows:
+            try:
+                entries_for_cache.append(
+                    WatchlistEntry(
+                        id=str(row["id"]),
+                        symbol=row["symbol"],
+                        asset_class=row.get("asset_class", "stock"),
+                        enabled=row.get("enabled", True),
+                        added_by=row.get("added_by", "unknown"),
+                        metadata=row.get("metadata", {}),
+                        created_at=_parse_dt(row.get("created_at")),
+                        updated_at=_parse_dt(row.get("updated_at")),
+                        deleted_at=None,
+                    )
+                )
+            except Exception as e:
+                logger.warning("Skipping malformed watchlist row: %s", e)
+                continue
+
         with self._lock:
             self._cache = _CacheEntry(
-                symbols=list(symbols),
+                entries=list(entries_for_cache),
                 timestamp=time.monotonic(),
             )
             self._stale_cache = None
@@ -242,9 +267,9 @@ class WatchlistRepository:
             if self._cache_is_valid(self._all_entries_cache):
                 logger.debug(
                     "Watchlist all_entries cache hit: %d entries",
-                    len(self._all_entries_cache.symbols),  # type: ignore[arg-type]
+                    len(self._all_entries_cache.entries),
                 )
-                return list(self._all_entries_cache.symbols)  # type: ignore[arg-type]
+                return list(self._all_entries_cache.entries)
 
         # Cache miss or expired — fetch from DB
         try:
@@ -264,9 +289,9 @@ class WatchlistRepository:
                 if self._all_entries_stale_cache is not None:
                     logger.warning(
                         "Returning stale all_entries cache (%d entries)",
-                        len(self._all_entries_stale_cache.symbols),  # type: ignore[arg-type]
+                        len(self._all_entries_stale_cache.entries),
                     )
-                    return list(self._all_entries_stale_cache.symbols)  # type: ignore[arg-type]
+                    return list(self._all_entries_stale_cache.entries)
             return []
 
         if not isinstance(rows, list):
@@ -293,11 +318,10 @@ class WatchlistRepository:
                 logger.warning("Skipping malformed watchlist row: %s", e)
                 continue
 
-        # Populate cache — store entries as list in symbols field (generic cache slot)
-        entry_symbols = [e.symbol for e in entries]
+        # Populate cache — store full WatchlistEntry objects
         with self._lock:
             self._all_entries_cache = _CacheEntry(
-                symbols=entry_symbols,  # type: ignore[arg-type]
+                entries=list(entries),
                 timestamp=time.monotonic(),
             )
             self._all_entries_stale_cache = None
