@@ -564,7 +564,19 @@ class WatchlistRepository:
             if ok:
                 success_count += 1
             else:
-                insert_errors.append(f"{v['symbol']} (insert failed)")
+                # Duplicate or insert failed — try to update metadata instead
+                updated = self.update_symbol(
+                    v["symbol"],
+                    metadata=v["metadata"],
+                )
+                if updated:
+                    logger.info(
+                        "Watchlist bulk_add: %s metadata updated (was duplicate)",
+                        v["symbol"],
+                    )
+                    success_count += 1
+                else:
+                    insert_errors.append(f"{v['symbol']} (insert failed)")
 
         if insert_errors:
             logger.warning(
