@@ -145,7 +145,7 @@ deploy:seed-watchlist:
         }' || echo "Seed failed (might be duplicates - that's OK)"
   only:
     - main
-  when: manual
+  when: on_success
   needs:
     - deploy:vercel
 
