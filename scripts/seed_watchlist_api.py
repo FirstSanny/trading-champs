@@ -466,11 +466,11 @@ def get_asset_class(symbol: str) -> str:
 
 def main() -> None:
     if len(sys.argv) < 3:
-        print("Usage: seed_watchlist_api.py <api_url> <api_key> [supabase_service_key]")
+        print("Usage: seed_watchlist_api.py <api_url> <api_secret> [supabase_service_key]")
         print(
-            "  api_url — base URL of deployed API, e.g. https://trading-champs.vercel.app"
+            "  api_url      — base URL of deployed API, e.g. https://trading-champs.vercel.app"
         )
-        print("  api_key             — WATCHLIST_API_KEY value")
+        print("  api_secret   — VERCEL_API_SECRET value (used as Bearer token)")
         print(
             "  supabase_service_key — optional; enables automatic Supabase migration before seeding"
         )
@@ -480,7 +480,7 @@ def main() -> None:
     if not api_url:
         print("ERROR: CI_ENVIRONMENT_URL is not set — cannot seed")
         sys.exit(1)
-    api_key = sys.argv[2]
+    api_secret = sys.argv[2]
     supabase_service_key = (
         sys.argv[3] if len(sys.argv) > 3 else os.environ.get("SUPABASE_SERVICE_KEY", "")
     )
@@ -520,7 +520,7 @@ def main() -> None:
         data=payload,
         headers={
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}",
+            "Authorization": f"Bearer {api_secret}",
         },
         method="POST",
     )
