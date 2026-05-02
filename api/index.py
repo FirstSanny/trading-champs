@@ -190,10 +190,10 @@ def _load_supabase_trades() -> bool:
 
         for t in trades:
             side = TradeSide.LONG if t.get("side", "").lower() == "long" else TradeSide.SHORT
-            from dateutil import parser
+            from dateutil import parser as dateutil_parser
 
-            entry_time = parser.parse(t["entry_time"]) if t.get("entry_time") else datetime.now()
-            exit_time = parser.parse(t["exit_time"]) if t.get("exit_time") else None
+            entry_time = dateutil_parser.parse(t["entry_time"]) if t.get("entry_time") else datetime.now()
+            exit_time = dateutil_parser.parse(t["exit_time"]) if t.get("exit_time") else None
 
             trade = tracker.open_trade(
                 symbol=t["symbol"],
@@ -298,9 +298,7 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
                 # Parse timestamps
                 created_at = order.get("created_at", "")
                 if created_at:
-                    from dateutil import parser  # type: ignore[import-untyped]
-
-                    entry_time = parser.parse(created_at)
+                    entry_time = dateutil_parser.parse(created_at)
                 else:
                     entry_time = datetime.now()
 
@@ -308,9 +306,7 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
                 exit_price = entry_price
                 exit_time = None
                 if closed_at:
-                    from dateutil import parser
-
-                    exit_time = parser.parse(closed_at)
+                    exit_time = dateutil_parser.parse(closed_at)
 
                 trade = tracker.open_trade(
                     symbol=order.get("symbol"),
@@ -474,7 +470,6 @@ def auth_guard(request: Request) -> JSONResponse | None:
         "/api/strategy-curves",
         "/api/strategies/overview",
         "/api/watchlist",
-        "/api/watchlist/bulk",
     ):
         return None
     if require_api_auth(request):
@@ -534,6 +529,7 @@ def _fetch_watchlist_fast() -> dict:
         entries = repo.get_all_entries()
         return {"symbols": [e.to_dict() for e in entries]}
     except Exception:
+        logging.warning("watchlist_api: _fetch_watchlist_fast failed, returning empty")
         return {"symbols": []}
 
 
@@ -577,6 +573,7 @@ def _get_strategies_overview_fast() -> dict:
             )
         return {"strategies": result}
     except Exception:
+        logging.warning("watchlist_api: _get_strategies_overview_fast failed, returning empty")
         return {"strategies": []}
 
 
@@ -711,7 +708,8 @@ async def watchlist_api(request: Request) -> JSONResponse:
             )
         try:
             count, errors = repo.bulk_add(entries, added_by=added_by)
-            return JSONResponse(content={"added": count, "errors": errors}, status_code=201)
+            status_code = 201 if count > 0 else 200
+            return JSONResponse(content={"added": count, "errors": errors, "success": count > 0}, status_code=status_code)
         except Exception as e:
             return JSONResponse(content={"error": str(e)}, status_code=400)
 
