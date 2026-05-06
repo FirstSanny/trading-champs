@@ -1,6 +1,5 @@
 """Unit tests for WatchlistRepository."""
 
-from datetime import datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -8,7 +7,6 @@ import pytest
 from trading_champs.data.watchlist_repository import (
     VALID_ASSET_CLASSES,
     ValidationError,
-    WatchlistEntry,
     WatchlistRepository,
     validate_symbol,
 )
@@ -79,13 +77,16 @@ class TestWatchlistRepositoryUnit:
     def test_get_all_entries_cache_hit(self):
         """Cache valid — returns cached without DB call."""
         import time
+        from datetime import datetime
+
+        from trading_champs.data.watchlist_repository import WatchlistEntry
 
         mock_client = MagicMock()
         repo = self._make_repo(mock_client)
 
-        # Pre-populate _all_entries_cache with WatchlistEntry objects
+        # Pre-populate _all_entries_cache with WatchlistEntry symbols
         repo._all_entries_cache = MagicMock()
-        repo._all_entries_cache.entries = [
+        repo._all_entries_cache.symbols = [
             WatchlistEntry(
                 id="1",
                 symbol="BTC/USDT",
@@ -130,7 +131,7 @@ class TestWatchlistRepositoryUnit:
         assert result[0].symbol == "ETH/USDT"
         mock_client._request.assert_called_once()
         assert repo._all_entries_cache is not None
-        assert repo._all_entries_cache.entries[0].symbol == "ETH/USDT"
+        assert repo._all_entries_cache.symbols == ["ETH/USDT"]
 
         # Stale cache should be cleared on fresh fetch
         assert repo._all_entries_stale_cache is None
@@ -144,34 +145,12 @@ class TestWatchlistRepositoryUnit:
         repo = self._make_repo(mock_client)
 
         repo._all_entries_stale_cache = MagicMock()
-        repo._all_entries_stale_cache.entries = [
-            WatchlistEntry(
-                id="99",
-                symbol="STALE1",
-                asset_class="crypto",
-                enabled=True,
-                added_by="manual",
-                metadata={},
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-            ),
-            WatchlistEntry(
-                id="100",
-                symbol="STALE2",
-                asset_class="stock",
-                enabled=True,
-                added_by="manual",
-                metadata={},
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-            ),
-        ]
+        repo._all_entries_stale_cache.symbols = ["STALE1", "STALE2"]
         repo._all_entries_stale_cache.timestamp = time.monotonic() - 600  # very old
 
         result = repo.get_all_entries()
 
-        assert result[0].symbol == "STALE1"
-        assert result[1].symbol == "STALE2"
+        assert result == ["STALE1", "STALE2"]
 
     def test_get_all_entries_db_error_no_cache_returns_empty(self):
         """DB error with no stale cache — returns empty list."""
@@ -192,30 +171,10 @@ class TestWatchlistRepositoryUnit:
         mock_client = MagicMock()
         repo = self._make_repo(mock_client)
 
-        # Pre-populate cache with WatchlistEntry objects
+        # Pre-populate cache
         repo._cache = MagicMock()
-        repo._cache.entries = [
-            WatchlistEntry(
-                id="1",
-                symbol="BTC/USDT",
-                asset_class="crypto",
-                enabled=True,
-                added_by="manual",
-                metadata={},
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-            ),
-            WatchlistEntry(
-                id="2",
-                symbol="ETH/USDT",
-                asset_class="crypto",
-                enabled=True,
-                added_by="manual",
-                metadata={},
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-            ),
-        ]
+        repo._cache.symbols = ["BTC/USDT", "ETH/USDT"]
+        repo._cache.timestamp = 0.0  # will be treated as valid since TTL=300
 
         # Manually override timestamp to be recent
         import time
@@ -231,8 +190,8 @@ class TestWatchlistRepositoryUnit:
         """Cache miss — fetches from DB and populates cache."""
         mock_client = MagicMock()
         mock_client._request.return_value = [
-            {"id": "1", "symbol": "AAPL"},
-            {"id": "2", "symbol": "BTC/USDT"},
+            {"symbol": "AAPL"},
+            {"symbol": "BTC/USDT"},
         ]
         repo = self._make_repo(mock_client)
         repo._cache = None  # ensure cache miss
@@ -242,7 +201,7 @@ class TestWatchlistRepositoryUnit:
         assert set(result) == {"AAPL", "BTC/USDT"}
         mock_client._request.assert_called_once()
         assert repo._cache is not None
-        assert set(e.symbol for e in repo._cache.entries) == {"AAPL", "BTC/USDT"}
+        assert set(repo._cache.symbols) == {"AAPL", "BTC/USDT"}
 
     def test_get_enabled_symbols_db_error_returns_stale_cache(self):
         """DB error — returns stale cache if available."""
@@ -253,18 +212,7 @@ class TestWatchlistRepositoryUnit:
         import time
 
         repo._stale_cache = MagicMock()
-        repo._stale_cache.entries = [
-            WatchlistEntry(
-                id="99",
-                symbol="STALE",
-                asset_class="stock",
-                enabled=True,
-                added_by="manual",
-                metadata={},
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-            ),
-        ]
+        repo._stale_cache.symbols = ["STALE"]
         repo._stale_cache.timestamp = time.monotonic() - 600  # very old
 
         result = repo.get_enabled_symbols()
@@ -301,18 +249,7 @@ class TestWatchlistRepositoryUnit:
         import time
 
         repo._cache = MagicMock()
-        repo._cache.entries = [
-            WatchlistEntry(
-                id="99",
-                symbol="OLD",
-                asset_class="stock",
-                enabled=True,
-                added_by="manual",
-                metadata={},
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-            ),
-        ]
+        repo._cache.symbols = ["OLD"]
         repo._cache.timestamp = time.monotonic()
 
         ok = repo.add_symbol("BTC/USDT", "crypto", added_by="agent:test")
@@ -529,18 +466,7 @@ class TestWatchlistRepositoryUnit:
         import time
 
         repo._cache = MagicMock()
-        repo._cache.entries = [
-            WatchlistEntry(
-                id="99",
-                symbol="OLD",
-                asset_class="stock",
-                enabled=True,
-                added_by="manual",
-                metadata={},
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-            ),
-        ]
+        repo._cache.symbols = ["OLD"]
         repo._cache.timestamp = time.monotonic()
 
         repo.add_symbol("BTC/USDT", "crypto")
@@ -570,18 +496,7 @@ class TestWatchlistRepositoryUnit:
         import time
 
         repo._cache = MagicMock()
-        repo._cache.entries = [
-            WatchlistEntry(
-                id="99",
-                symbol="BTC/USDT",
-                asset_class="crypto",
-                enabled=True,
-                added_by="manual",
-                metadata={},
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-            ),
-        ]
+        repo._cache.symbols = ["BTC/USDT"]
         repo._cache.timestamp = time.monotonic()
 
         repo.soft_delete("BTC/USDT")
@@ -611,18 +526,7 @@ class TestWatchlistRepositoryUnit:
         import time
 
         repo._cache = MagicMock()
-        repo._cache.entries = [
-            WatchlistEntry(
-                id="99",
-                symbol="AAPL",
-                asset_class="stock",
-                enabled=True,
-                added_by="manual",
-                metadata={},
-                created_at=datetime.now(),
-                updated_at=datetime.now(),
-            ),
-        ]
+        repo._cache.symbols = ["AAPL"]
         repo._cache.timestamp = time.monotonic()
 
         repo.update_symbol("AAPL", enabled=False)

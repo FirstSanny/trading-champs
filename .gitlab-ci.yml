@@ -73,19 +73,6 @@ deploy:vercel:
     - tags
   when: on_success
 
-deploy:seed-watchlist:
-  stage: deploy
-  image: python:3.11
-  before_script:
-    - pip install --no-cache-dir requests
-  script:
-    - python scripts/seed_watchlist_api.py "$CI_ENVIRONMENT_URL" "$VERCEL_API_SECRET" "$SUPABASE_SERVICE_KEY"
-  only:
-    - main
-  when: on_success
-  needs:
-    - deploy:vercel
-
 deploy:n8n:
   stage: deploy
   image: python:3.11

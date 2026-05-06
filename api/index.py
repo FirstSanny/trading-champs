@@ -43,29 +43,6 @@ from trading_champs.pl.tracker import DailyPnL, PnLTracker, Trade, TradeSide
 logger = logging.getLogger(__name__)
 
 
-def _serialize_performance_metrics(m: PerformanceMetrics) -> dict:
-    """Serialize PerformanceMetrics with proper timedelta handling."""
-    return {
-        "total_return": m.total_return,
-        "total_return_percent": m.total_return_percent,
-        "sharpe_ratio": m.sharpe_ratio,
-        "max_drawdown": m.max_drawdown,
-        "max_drawdown_percent": m.max_drawdown_percent,
-        "win_rate": m.win_rate,
-        "profit_factor": m.profit_factor,
-        "avg_win": m.avg_win,
-        "avg_loss": m.avg_loss,
-        "num_trades": m.num_trades,
-        "num_wins": m.num_wins,
-        "num_losses": m.num_losses,
-        "largest_win": m.largest_win,
-        "largest_loss": m.largest_loss,
-        "avg_holding_time_seconds": (
-            m.avg_holding_time.total_seconds() if m.avg_holding_time else None
-        ),
-    }
-
-
 def serialize_dashboard_data(data: DashboardData) -> dict:
     """Convert DashboardData to JSON-serializable dict."""
 
@@ -93,9 +70,7 @@ def serialize_dashboard_data(data: DashboardData) -> dict:
             [_serialize_trade(t) for t in data.recent_trades] if data.recent_trades else []
         ),
         "performance_metrics": (
-            _serialize_performance_metrics(data.performance_metrics)
-            if data.performance_metrics
-            else None
+            asdict(data.performance_metrics) if data.performance_metrics else None
         ),
         "open_positions": data.open_positions,
         "alpaca_connected": data.alpaca_connected,
@@ -190,10 +165,10 @@ def _load_supabase_trades() -> bool:
 
         for t in trades:
             side = TradeSide.LONG if t.get("side", "").lower() == "long" else TradeSide.SHORT
-            from dateutil import parser as dateutil_parser
+            from dateutil import parser
 
-            entry_time = dateutil_parser.parse(t["entry_time"]) if t.get("entry_time") else datetime.now()
-            exit_time = dateutil_parser.parse(t["exit_time"]) if t.get("exit_time") else None
+            entry_time = parser.parse(t["entry_time"]) if t.get("entry_time") else datetime.now()
+            exit_time = parser.parse(t["exit_time"]) if t.get("exit_time") else None
 
             trade = tracker.open_trade(
                 symbol=t["symbol"],
@@ -298,7 +273,9 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
                 # Parse timestamps
                 created_at = order.get("created_at", "")
                 if created_at:
-                    entry_time = dateutil_parser.parse(created_at)
+                    from dateutil import parser  # type: ignore[import-untyped]
+
+                    entry_time = parser.parse(created_at)
                 else:
                     entry_time = datetime.now()
 
@@ -306,7 +283,9 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
                 exit_price = entry_price
                 exit_time = None
                 if closed_at:
-                    exit_time = dateutil_parser.parse(closed_at)
+                    from dateutil import parser
+
+                    exit_time = parser.parse(closed_at)
 
                 trade = tracker.open_trade(
                     symbol=order.get("symbol"),
@@ -320,9 +299,8 @@ def _fetch_alpaca_trades(mode: str = "paper") -> tuple[bool, str | None]:
 
         provider.set_alpaca_connector(connector)
         return True, None
-    except Exception as e:
-        logging.error("Alpaca %s fetch failed: %s", mode, e)
-        return False, f"Alpaca {mode} fetch failed: {e}"
+    except Exception:
+        return False, f"Alpaca {mode} fetch failed"
 
 
 # Current Alpaca mode (paper or live)
@@ -466,11 +444,11 @@ def auth_guard(request: Request) -> JSONResponse | None:
     # Dashboard API is public - no auth required for main dashboard data
     if request.url.path in (
         "/api/dashboard",
-        "/api/dashboard/combined",
         "/api/equity-curve",
         "/api/strategy-curves",
         "/api/strategies/overview",
         "/api/watchlist",
+        "/api/watchlist/bulk",
     ):
         return None
     if require_api_auth(request):
@@ -486,151 +464,6 @@ async def dashboard(request: Request) -> HTMLResponse:
     return HTMLResponse(content=get_dashboard_html())
 
 
-# Cached dashboard data (refreshed on first request, reused across calls)
-_cached_dashboard_data: dict | None = None
-_cached_dashboard_timestamp: float = 0
-_DASHBOARD_CACHE_TTL_SECONDS: float = 25  # Refresh every 25s (client polls at 30s intervals)
-
-
-def _get_cached_or_fresh_dashboard(days: int, mode: str) -> dict:
-    """Return cached dashboard data if fresh, otherwise compute fresh data.
-
-    Uses a time-based cache to avoid redundant Alpaca API calls across
-    multiple concurrent dashboard requests.
-    """
-    import time
-
-    global _cached_dashboard_data, _cached_dashboard_timestamp
-    now = time.monotonic()
-
-    if _cached_dashboard_data is not None:
-        if (now - _cached_dashboard_timestamp) < _DASHBOARD_CACHE_TTL_SECONDS:
-            return _cached_dashboard_data
-
-    error_message = None
-    if mode != _current_alpaca_mode:
-        ok, err = _refresh_alpaca_trades(mode)
-        if not ok:
-            error_message = err
-            mode = _current_alpaca_mode
-
-    data = serialize_dashboard_data(provider.get_dashboard_data(days, mode))
-    if error_message:
-        data["error"] = error_message
-
-    _cached_dashboard_data = data
-    _cached_dashboard_timestamp = now
-    return data
-
-
-def _fetch_watchlist_fast() -> dict:
-    """Fast watchlist fetch without triggering trader state."""
-    try:
-        repo = _get_watchlist_repo()
-        entries = repo.get_all_entries()
-        return {"symbols": [e.to_dict() for e in entries]}
-    except Exception as e:
-        logging.error("_fetch_watchlist_fast failed: %s", e)
-        return {"symbols": [], "_error": str(e)}
-
-
-def _get_strategies_overview_fast() -> dict:
-    """Get strategies overview without calling get_orchestrator on cold start."""
-    try:
-        orchestrator = get_orchestrator()
-        states = orchestrator.get_all_strategy_states()
-        result = []
-        for strategy_id, state in states.items():
-            if state.stage == "archived":
-                continue
-            strategy_loop = orchestrator._strategy_loops.get(strategy_id)
-            metrics_data = {}
-            if strategy_loop:
-                metrics = strategy_loop.get_metrics(state.stage_entered_at)
-                metrics_data = {
-                    "total_trades": metrics.total_trades,
-                    "win_rate": round(metrics.win_rate * 100, 1) if metrics.win_rate else 0,
-                    "current_drawdown_pct": round(metrics.current_drawdown_pct, 2),
-                    "total_pnl_pct": round(metrics.total_pnl_pct, 2),
-                    "days_in_stage": metrics.days_in_stage,
-                }
-            elif strategy_id in orchestrator._data_strategy_ids:
-                data_loop = orchestrator._get_data_strategy_loop(strategy_id)
-                sig_metrics = data_loop.get_signal_metrics(state.stage_entered_at)
-                metrics_data = {
-                    "total_signals": sig_metrics.total_signals,
-                    "buy_rate": round(sig_metrics.buy_rate * 100, 1),
-                    "neutral_rate": round(sig_metrics.neutral_rate * 100, 1),
-                    "consecutive_neutral": sig_metrics.consecutive_neutral,
-                    "days_in_stage": sig_metrics.days_in_stage,
-                }
-            result.append(
-                {
-                    "strategy_id": strategy_id,
-                    "stage": state.stage,
-                    "stage_entered_at": state.stage_entered_at.isoformat(),
-                    "metrics": metrics_data,
-                }
-            )
-        return {"strategies": result}
-    except Exception as e:
-        logging.error("_get_strategies_overview_fast failed: %s", e)
-        return {"strategies": [], "_error": str(e)}
-
-
-async def combined_dashboard_api(request: Request) -> JSONResponse:
-    """Return all dashboard data in a single call.
-
-    Combines /dashboard, /equity-curve, /strategy-curves, /strategies/overview,
-    and /watchlist into one endpoint to avoid N round-trips to Alpaca.
-    """
-    if (err_resp := auth_guard(request)) is not None:
-        return err_resp
-    query_params = request.query_params
-    days = int(query_params.get("days", [30])[0])
-    mode = query_params.get("mode", ["paper"])[0]
-
-    dashboard_data = _get_cached_or_fresh_dashboard(days, mode)
-
-    try:
-        equity_curve_data = provider.get_equity_curve(days, mode)
-    except Exception as e:
-        logging.error("combined_dashboard_api: equity_curve failed: %s", e)
-        equity_curve_data = {"_error": str(e)}
-
-    try:
-        strategy_curves_data = provider.get_strategy_equity_curves(days, mode)
-    except Exception as e:
-        logging.error("combined_dashboard_api: strategy_curves failed: %s", e)
-        strategy_curves_data = {"_error": str(e)}
-
-    try:
-        strategies_overview = _get_strategies_overview_fast()
-    except Exception as e:
-        logging.error("combined_dashboard_api: strategies_overview failed: %s", e)
-        strategies_overview = {"strategies": [], "_error": str(e)}
-
-    try:
-        watchlist_data = _fetch_watchlist_fast()
-    except Exception as e:
-        logging.error("combined_dashboard_api: watchlist failed: %s", e)
-        watchlist_data = {"symbols": [], "_error": str(e)}
-
-    sections = [equity_curve_data, strategy_curves_data, strategies_overview, watchlist_data]
-    has_errors = any(isinstance(v, dict) and v.get("_error") for v in sections)
-
-    return JSONResponse(
-        content={
-            "dashboard": dashboard_data,
-            "equity_curve": equity_curve_data,
-            "strategy_curves": strategy_curves_data,
-            "strategies_overview": strategies_overview,
-            "watchlist": watchlist_data,
-            "_has_errors": has_errors,
-        }
-    )
-
-
 async def dashboard_api(request: Request) -> JSONResponse:
     """Return dashboard data as JSON."""
     if (err_resp := auth_guard(request)) is not None:
@@ -640,7 +473,18 @@ async def dashboard_api(request: Request) -> JSONResponse:
     days = int(query_params.get("days", [30])[0])
     mode = query_params.get("mode", ["paper"])[0]
 
-    data = _get_cached_or_fresh_dashboard(days, mode)
+    error_message = None
+    # Check if mode changed - re-fetch trades if needed
+    if mode != _current_alpaca_mode:
+        ok, err = _refresh_alpaca_trades(mode)
+        if not ok:
+            error_message = err
+            # Fall back to current mode's data instead of leaving tracker empty
+            mode = _current_alpaca_mode
+
+    data = serialize_dashboard_data(provider.get_dashboard_data(days, mode))
+    if error_message:
+        data["error"] = error_message
     return JSONResponse(content=data)
 
 
@@ -717,8 +561,7 @@ async def watchlist_api(request: Request) -> JSONResponse:
             )
         try:
             count, errors = repo.bulk_add(entries, added_by=added_by)
-            status_code = 201 if count > 0 else 200
-            return JSONResponse(content={"added": count, "errors": errors, "success": count > 0}, status_code=status_code)
+            return JSONResponse(content={"added": count, "errors": errors}, status_code=201)
         except Exception as e:
             return JSONResponse(content={"error": str(e)}, status_code=400)
 
@@ -857,10 +700,7 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                 data_strategy_service = DataStrategyService()
 
                 # Per-strategy symbols: round-robin assign ORCHESTRATOR_SYMBOLS across registry keys
-                symbols_raw = os.environ.get(
-                    "ORCHESTRATOR_SYMBOLS",
-                    "AAPL,MSFT,SPY,TSLA,NVDA,AMD,QQQ,GOOGL,META,AMZN,JPM,GS",
-                )
+                symbols_raw = os.environ.get("ORCHESTRATOR_SYMBOLS", "BTC/USDT")
                 symbols_list = [s.strip() for s in symbols_raw.split(",") if s.strip()]
                 per_symbol = [symbols_list[i % len(symbols_list)] for i in range(len(strategy_ids))]
 
@@ -896,7 +736,7 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                     config=OrchestratorConfig(
                         watchlist_repository=_get_watchlist_repo(),
                         conviction_threshold=float(
-                            os.environ.get("ORCHESTRATOR_CONVICTION_THRESHOLD", "0.2")
+                            os.environ.get("ORCHESTRATOR_CONVICTION_THRESHOLD", "0.5")
                         ),
                     ),
                     supabase=supabase_client,
@@ -1308,7 +1148,6 @@ async def metrics(request: Request) -> PlainTextResponse:
 # Starlette routes
 routes = [
     Route("/", dashboard),
-    Route("/api/dashboard/combined", combined_dashboard_api),
     Route("/api/dashboard", dashboard_api),
     Route("/api/equity-curve", equity_curve_api),
     Route("/api/strategy-curves", strategy_curves_api),
