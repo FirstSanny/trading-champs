@@ -872,7 +872,7 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                         "symbols": [per_symbol[i]],
                         "timeframe": os.environ.get("ORCHESTRATOR_TIMEFRAME", "4h"),
                         "data_connector": os.environ.get(
-                            "ORCHESTRATOR_DATA_CONNECTOR", "alpaca_market"
+                            "ORCHESTRATOR_DATA_CONNECTOR", "yahoo_finance"
                         ),
                         "exec_connector": os.environ.get("ORCHESTRATOR_EXEC_CONNECTOR", "alpaca"),
                         "lookback_bars": lookback_override,
