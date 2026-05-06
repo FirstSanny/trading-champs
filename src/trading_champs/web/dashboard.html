@@ -316,7 +316,6 @@
         .watchlist-toggle-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 
         .inactive-card { opacity: 0.5; }
-        .watchlist-container { display: contents; }
 
         /* CHARTS */
         .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
@@ -778,13 +777,13 @@
             _watchlistData = entries || [];
             document.getElementById('watchlist-count').textContent = _watchlistData.length;
 
-            var container = document.getElementById('watchlist-container');
+            var tbody = document.getElementById('watchlist-tbody');
             if (_watchlistData.length === 0) {
-                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">No symbols in watchlist</div><div class="empty-state-body">Add symbols via the API or Supabase dashboard.</div></div>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--color-text-tertiary);padding:var(--space-6)">No symbols in watchlist</td></tr>';
+                document.getElementById('watchlist-cards').innerHTML = '';
                 return;
             }
 
-            var tbody = document.getElementById('watchlist-tbody');
             var rows = _watchlistData.map(function(e) {
                 var meta = e.metadata || {};
                 var companyName = escHtml(meta.company_name || '—');
@@ -811,7 +810,7 @@
                     '</td>' +
                 '</tr>';
             });
-            tbody.innerHTML = DOMPurify.sanitize(rows.join(''), { RETURN_TRUSTED_TYPE: false });
+            tbody.innerHTML = rows.join('');
 
             // Mobile cards fallback
             var cards = document.getElementById('watchlist-cards');
