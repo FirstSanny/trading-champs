@@ -82,13 +82,17 @@ def run_migrations(supabase_url: str, service_key: str) -> bool:
     return True
 
 
-def wait_for_deployment(api_url: str, timeout: int = 60) -> bool:
+def wait_for_deployment(api_url: str, api_secret: str, timeout: int = 60) -> bool:
     """Poll /api/watchlist until it responds, indicating the deployment is live."""
     health_url = f"{api_url.rstrip('/')}/api/watchlist"
     start = time.time()
     while time.time() - start < timeout:
         try:
-            req = urllib.request.Request(health_url, method="GET")
+            req = urllib.request.Request(
+                health_url,
+                method="GET",
+                headers={"Authorization": f"Bearer {api_secret}"} if api_secret else {},
+            )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 if resp.status == 200:
                     return True
@@ -496,7 +500,7 @@ def main() -> None:
     )
 
     print(f"Waiting for deployment at {api_url} to be ready...")
-    if not wait_for_deployment(api_url, timeout=90):
+    if not wait_for_deployment(api_url, api_secret, timeout=90):
         print("Deployment not ready after 90s — skipping seed")
         sys.exit(0)
 
