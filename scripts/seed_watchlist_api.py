@@ -517,8 +517,7 @@ def main() -> None:
 
     entries = []
     for symbol, meta in SYMBOL_CATALOG.items():
-        normalized = _normalize_symbol(symbol)
-        asset_class = get_asset_class(normalized)
+        asset_class = get_asset_class(symbol)
         entries.append(
             {
                 "symbol": symbol,
