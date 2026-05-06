@@ -896,7 +896,7 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                     config=OrchestratorConfig(
                         watchlist_repository=_get_watchlist_repo(),
                         conviction_threshold=float(
-                            os.environ.get("ORCHESTRATOR_CONVICTION_THRESHOLD", "0.2")
+                            os.environ.get("ORCHESTRATOR_CONVICTION_THRESHOLD", "0.15")
                         ),
                     ),
                     supabase=supabase_client,
