@@ -651,7 +651,8 @@ class TestWatchlistRepositoryIntegration:
         validate_symbol("BTC/USDT", "crypto")
         validate_symbol("AAPL", "stock")
         validate_symbol("QQQ", "etf")
-        assert VALID_ASSET_CLASSES == {"crypto", "stock", "etf"}
+        validate_symbol("0100.HK", "hk")
+        assert VALID_ASSET_CLASSES == {"crypto", "stock", "etf", "hk"}
 
     def test_get_by_symbol_returns_watchlist_entry(self):
         """get_by_symbol returns a proper WatchlistEntry."""
