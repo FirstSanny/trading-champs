@@ -62,36 +62,54 @@ class YahooFinanceConnector(BaseConnector):
 
     def connect(self) -> None:
         """Verify connectivity with a lightweight request."""
-        try:
-            resp = self._session.get(
-                f"{YAHOO_CHART_API}/AAPL",
-                params={"interval": "1d", "range": "5d"},
-                timeout=10,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            if "chart" not in data or "result" not in data["chart"]:
-                raise ConnectionError("Yahoo Finance returned unexpected response format")
-            if data["chart"]["result"] is None:
-                raise ConnectionError("Yahoo Finance symbol not found: AAPL")
-            self._connected = True
-            logger.info("Connected to Yahoo Finance")
-        except requests.exceptions.HTTPError as e:
-            logger.error(
-                "Yahoo Finance HTTPError during connect: %s %s",
-                e.response.status_code,
-                e.response.text[:200],
-            )
-            raise ConnectionError(f"Yahoo Finance connection failed: {e}")
-        except requests.exceptions.Timeout:
-            logger.error("Yahoo Finance connection timed out")
-            raise ConnectionError("Yahoo Finance connection timed out")
-        except requests.exceptions.ConnectionError as e:
-            logger.error("Yahoo Finance connection error: %s", e)
-            raise ConnectionError(f"Yahoo Finance unreachable: {e}")
-        except Exception as e:
-            logger.error("Yahoo Finance unexpected connect error: %s", e)
-            raise ConnectionError(f"Yahoo Finance connection failed: {e}")
+        for attempt in range(3):
+            try:
+                resp = self._session.get(
+                    f"{YAHOO_CHART_API}/AAPL",
+                    params={"interval": "1d", "range": "5d"},
+                    timeout=15,
+                )
+
+                if resp.status_code == 429:
+                    wait_time = 2**attempt
+                    logger.warning(
+                        "Yahoo Finance rate limited during connect, retrying in %ds", wait_time
+                    )
+                    time.sleep(wait_time)
+                    continue
+
+                resp.raise_for_status()
+                data = resp.json()
+                if "chart" not in data or "result" not in data["chart"]:
+                    raise ConnectionError("Yahoo Finance returned unexpected response format")
+                if data["chart"]["result"] is None:
+                    raise ConnectionError("Yahoo Finance symbol not found: AAPL")
+                self._connected = True
+                logger.info("Connected to Yahoo Finance")
+                return
+            except requests.exceptions.HTTPError as e:
+                if e.response is not None and e.response.status_code == 429:
+                    continue
+                logger.error(
+                    "Yahoo Finance HTTPError during connect: %s %s",
+                    e.response.status_code if e.response else "unknown",
+                    e.response.text[:200] if e.response else "",
+                )
+                raise ConnectionError(f"Yahoo Finance connection failed: {e}")
+            except requests.exceptions.Timeout:
+                logger.error("Yahoo Finance connection timed out")
+                raise ConnectionError("Yahoo Finance connection timed out")
+            except requests.exceptions.ConnectionError as e:
+                logger.error("Yahoo Finance connection error: %s", e)
+                raise ConnectionError(f"Yahoo Finance unreachable: {e}")
+            except ConnectionError:
+                raise
+            except Exception as e:
+                logger.error("Yahoo Finance unexpected connect error: %s", e)
+                raise ConnectionError(f"Yahoo Finance connection failed: {e}")
+
+        # All 3 attempts exhausted
+        raise ConnectionError("Yahoo Finance connection failed after 3 attempts")
 
     def disconnect(self) -> None:
         self._connected = False
@@ -212,6 +230,18 @@ class YahooFinanceConnector(BaseConnector):
             except requests.exceptions.HTTPError as e:
                 if e.response is not None and e.response.status_code == 404:
                     raise ValueError(f"Symbol not found on Yahoo Finance: {symbol}")
+                # Retry on 429 (rate limit) and 5xx (server error) up to max attempts
+                if e.response is not None and e.response.status_code in (429, 500, 502, 503, 504):
+                    if attempt < 2:
+                        wait_time = 2**attempt
+                        logger.warning(
+                            "Yahoo Finance HTTP %s for %s, retrying in %ds",
+                            e.response.status_code,
+                            symbol,
+                            wait_time,
+                        )
+                        time.sleep(wait_time)
+                        continue
                 logger.error("Yahoo Finance HTTP error for %s: %s", symbol, e)
                 raise ConnectionError(f"Yahoo Finance request failed: {e}")
             except requests.exceptions.Timeout:
