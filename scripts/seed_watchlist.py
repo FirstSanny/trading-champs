@@ -59,7 +59,6 @@ SYMBOL_CATALOG: dict[str, dict[str, str]] = {
     "AMPX": {"company_name": "Amprius Technologies Inc.", "category": "short_squeeze", "description": "Lithium battery technology", "exchange": "NYSE"},
 
     # AI Software / Cloud
-    "PATH": {"company_name": "Palantir Technologies Inc.", "category": "ai_software", "description": "AI and data analytics platform", "exchange": "NYSE"},
     "IONQ": {"company_name": "IonQ Inc.", "category": "ai_software", "description": "Quantum computing as a service", "exchange": "NYSE"},
     "CRWD": {"company_name": "CrowdStrike Holdings Inc.", "category": "ai_software", "description": "Cybersecurity AI platform", "exchange": "NASDAQ"},
     "SNOW": {"company_name": "Snowflake Inc.", "category": "ai_software", "description": "Data cloud and AI infrastructure", "exchange": "NYSE"},
@@ -131,8 +130,8 @@ SHORT_SQUEEZE_STOCKS = [
 ]
 
 AI_SOFTWARE_STOCKS = [
-    ("PATH", "stock"), ("IONQ", "stock"), ("CRWD", "stock"), ("SNOW", "stock"),
-    ("DDOG", "stock"), ("DKNG", "stock"), ("U", "stock"), ("PLTR", "stock"),
+    ("PLTR", "stock"), ("IONQ", "stock"), ("CRWD", "stock"), ("SNOW", "stock"),
+    ("DDOG", "stock"), ("DKNG", "stock"), ("U", "stock"),
 ]
 
 CHINESE_AI_STOCKS = [
