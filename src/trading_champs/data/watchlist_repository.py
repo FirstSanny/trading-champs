@@ -17,10 +17,11 @@ logger = logging.getLogger(__name__)
 # Validation
 # ---------------------------------------------------------------------------
 
-VALID_ASSET_CLASSES = {"crypto", "stock", "etf"}
+VALID_ASSET_CLASSES = {"crypto", "stock", "etf", "hk"}
 
 SYMBOL_REGEX_CRYPTO = re.compile(r"^[A-Z]{2,10}/[A-Z]{2,10}$")
 SYMBOL_REGEX_EQUITY = re.compile(r"^[A-Z]{1,5}$")
+SYMBOL_REGEX_HK = re.compile(r"^\d{4}\.HK$")
 
 
 class ValidationError(Exception):
@@ -50,6 +51,12 @@ def validate_symbol(symbol: str, asset_class: str) -> None:
             raise ValidationError(
                 f"Invalid {asset_class} symbol format: '{symbol}'. "
                 "Expected format: AAPL, SPY (uppercase, 1-5 letters)"
+            )
+    elif asset_class == "hk":
+        if not SYMBOL_REGEX_HK.match(symbol):
+            raise ValidationError(
+                f"Invalid HK stock symbol format: '{symbol}'. "
+                "Expected format: 0005.HK, 0100.HK (4 digits.HK)"
             )
     else:
         raise ValidationError(

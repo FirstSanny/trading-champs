@@ -376,7 +376,7 @@ class TradingLoop:
         import os
 
         redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-        lock_ttl = int(os.environ.get("ITERATE_LOCK_TTL_SECONDS", "60"))
+        lock_ttl = int(os.environ.get("ITERATE_LOCK_TTL_SECONDS", "120"))
 
         from trading_champs.core.loop_state import RedisDistributedLock
 

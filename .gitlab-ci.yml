@@ -5,6 +5,7 @@ stages:
   - deploy
 
 variables:
+  GIT_DEPTH: 0  # full clone so seed script always has latest commits
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
 
 cache:
