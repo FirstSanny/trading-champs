@@ -463,6 +463,8 @@ SYMBOL_CATALOG = {
 def get_asset_class(symbol: str) -> str:
     if "/" in symbol:
         return "crypto"
+    if symbol.endswith(".HK"):
+        return "hk"
     if symbol in ("SOXX", "BOTZ", "ARKW", "IPO", "SKF", "DRIP"):
         return "etf"
     return "stock"
