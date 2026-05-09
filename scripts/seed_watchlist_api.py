@@ -199,12 +199,6 @@ SYMBOL_CATALOG = {
         "description": "Lithium battery technology",
         "exchange": "NYSE",
     },
-    "PATH": {
-        "company_name": "Palantir Technologies Inc.",
-        "category": "ai_software",
-        "description": "AI and data analytics platform",
-        "exchange": "NYSE",
-    },
     "IONQ": {
         "company_name": "IonQ Inc.",
         "category": "ai_software",
