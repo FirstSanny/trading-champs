@@ -258,6 +258,65 @@
         .pnl-positive { color: var(--color-positive); }
         .pnl-negative { color: var(--color-negative); }
 
+        /* WATCHLIST TABLE */
+        .watchlist-table-wrapper { overflow-x: auto; width: 100%; }
+        .watchlist-table { table-layout: fixed; width: 100%; }
+        .watchlist-table .symbol-cell { font-weight: 600; font-family: var(--font-mono); white-space: nowrap; }
+        .watchlist-table .company-cell { font-family: var(--font-ui); font-size: 12px; color: var(--color-text-primary); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .watchlist-table .desc-cell { font-family: var(--font-ui); font-size: 12px; color: var(--color-text-secondary); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .watchlist-table .asset-class-cell { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--color-text-tertiary); white-space: nowrap; }
+        .watchlist-table .status-cell { white-space: nowrap; }
+        .watchlist-row td { vertical-align: middle; }
+        .watchlist-row.inactive-row td { opacity: 0.5; }
+        .watchlist-row.inactive-row .symbol-cell { text-decoration: line-through; }
+
+        .category-badge {
+            display: inline-block;
+            padding: 2px 7px;
+            border-radius: var(--radius-sm);
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            font-family: var(--font-ui);
+            background: rgba(107,122,143,0.15);
+            color: var(--color-text-secondary);
+            border: 1px solid var(--color-border);
+        }
+        .category-badge.cat-semiconductor { background: rgba(0,212,170,0.1); color: var(--color-accent); border-color: rgba(0,212,170,0.3); }
+        .category-badge.cat-ai_chips { background: rgba(29,155,240,0.1); color: #1d9bf0; border-color: rgba(29,155,240,0.3); }
+        .category-badge.cat-ai_infra { background: rgba(0,230,118,0.1); color: var(--color-positive); border-color: rgba(0,230,118,0.3); }
+        .category-badge.cat-ai_software { background: rgba(255,82,82,0.1); color: var(--color-negative); border-color: rgba(255,82,82,0.3); }
+        .category-badge.cat-short_squeeze { background: rgba(255,179,0,0.1); color: var(--color-warning); border-color: rgba(255,179,0,0.3); }
+        .category-badge.cat-chinese_tech, .category-badge.cat-chinese_ai_tiger { background: rgba(255,82,82,0.1); color: #ff5252; border-color: rgba(255,82,82,0.3); }
+        .category-badge.cat-ai_crypto, .category-badge.cat-defi, .category-badge.cat-blockchain_infra { background: rgba(138,43,226,0.1); color: #ba68c8; border-color: rgba(138,43,226,0.3); }
+        .category-badge.cat-semiconductor_etf, .category-badge.cat-robotics_etf, .category-badge.cat-innovation_etf, .category-badge.cat-ipo_etf { background: rgba(100,181,246,0.1); color: #64b5f6; border-color: rgba(100,181,246,0.3); }
+        .category-badge.cat-sector_short { background: rgba(255,82,82,0.1); color: var(--color-negative); border-color: rgba(255,82,82,0.3); }
+
+        .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: middle; flex-shrink: 0; }
+        .status-dot.active { background: var(--color-accent); }
+        .status-dot.inactive { background: var(--color-text-tertiary); }
+
+        .watchlist-toggle-btn {
+            background: none;
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            padding: 2px 8px;
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            cursor: pointer;
+            color: var(--color-text-secondary);
+            font-family: var(--font-ui);
+            transition: color 0.15s, border-color 0.15s, background 0.15s;
+        }
+        .watchlist-toggle-btn:hover { border-color: var(--color-accent); color: var(--color-accent); background: rgba(0,212,170,0.06); }
+        .watchlist-toggle-btn.pending { opacity: 0.6; cursor: wait; }
+        .watchlist-toggle-btn:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+
+        .inactive-card { opacity: 0.5; }
+
         /* CHARTS */
         .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); }
         .chart-container { background: var(--color-bg-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-4); overflow: hidden; }
@@ -414,9 +473,22 @@
             <span class="section-chevron open" id="watchlist-chevron">▼</span>
         </div>
         <div class="collapsible-content open" id="watchlist-content">
-            <div class="watchlist-section" id="watchlist-container">
-                <div class="empty-state"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">No symbols in watchlist</div><div class="empty-state-body">Add symbols via the API or Supabase dashboard.</div></div>
+            <div class="watchlist-table-wrapper">
+                <table class="data-table watchlist-table" id="watchlist-table" aria-label="Watchlist">
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th>Company / Name</th>
+                            <th>Category</th>
+                            <th>Class</th>
+                            <th>Description</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="watchlist-tbody"></tbody>
+                </table>
             </div>
+            <div id="watchlist-cards"></div>
         </div>
     </section>
 
@@ -695,66 +767,66 @@
 
         /* ---- WATCHLIST ---- */
         var _watchlistData = [];
-        var _watchlistPage = 20;
         var _pendingToggles = {};
+
+        function escHtml(s) {
+            return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
 
         function renderWatchlist(entries) {
             _watchlistData = entries || [];
-            _watchlistPage = 20;
             document.getElementById('watchlist-count').textContent = _watchlistData.length;
 
-            var container = document.getElementById('watchlist-container');
+            var tbody = document.getElementById('watchlist-tbody');
             if (_watchlistData.length === 0) {
-                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">&#128269;</div><div class="empty-state-title">No symbols in watchlist</div><div class="empty-state-body">Add symbols via the API or Supabase dashboard.</div></div>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--color-text-tertiary);padding:var(--space-6)">No symbols in watchlist</td></tr>';
+                document.getElementById('watchlist-cards').innerHTML = '';
                 return;
             }
 
-            var active = _watchlistData.filter(function(e) { return e.enabled; });
-            var inactive = _watchlistData.filter(function(e) { return !e.enabled; });
+            var rows = _watchlistData.map(function(e) {
+                var meta = e.metadata || {};
+                var companyName = escHtml(meta.company_name || '—');
+                var category = escHtml(meta.category || '—');
+                var description = escHtml(meta.description || meta.reason || '—');
+                var assetClass = escHtml(e.asset_class || '—');
+                var statusClass = e.enabled ? 'active' : 'inactive';
+                var statusLabel = e.enabled ? 'Active' : 'Paused';
+                var pendingClass = _pendingToggles[e.symbol] ? 'pending' : '';
+                var categoryBadge = '<span class="category-badge cat-' + meta.category + '">' + category + '</span>';
 
-            var html = '';
-            if (active.length > 0) {
-                html += '<div class="watchlist-group">';
-                html += '<div class="watchlist-group-label">Active (' + active.length + ')</div>';
-                html += '<div class="watchlist-pills">';
-                html += active.slice(0, _watchlistPage).map(function(e) {
-                    return renderWatchlistPill(e);
-                }).join('');
-                if (active.length > _watchlistPage) {
-                    html += '<button class="watchlist-show-more" onclick="watchlistShowMore()">Show ' + (active.length - _watchlistPage) + ' more</button>';
-                }
-                html += '</div></div>';
-            }
-            if (inactive.length > 0) {
-                html += '<div class="watchlist-group">';
-                html += '<div class="watchlist-group-label">Inactive (' + inactive.length + ')</div>';
-                html += '<div class="watchlist-pills">';
-                html += inactive.slice(0, _watchlistPage).map(function(e) {
-                    return renderWatchlistPill(e);
-                }).join('');
-                if (inactive.length > _watchlistPage) {
-                    html += '<button class="watchlist-show-more" onclick="watchlistShowMore()">Show ' + (inactive.length - _watchlistPage) + ' more</button>';
-                }
-                html += '</div></div>';
-            }
-            container.innerHTML = DOMPurify.sanitize(html, { RETURN_TRUSTED_TYPE: false });
-        }
+                return '<tr class="watchlist-row' + (e.enabled ? '' : ' inactive-row') + '">' +
+                    '<td class="symbol-cell">' + escHtml(e.symbol) + '</td>' +
+                    '<td class="company-cell" title="' + companyName + '">' + companyName + '</td>' +
+                    '<td>' + categoryBadge + '</td>' +
+                    '<td class="asset-class-cell">' + assetClass + '</td>' +
+                    '<td class="desc-cell" title="' + description + '">' + description + '</td>' +
+                    '<td class="status-cell">' +
+                        '<span class="status-dot ' + statusClass + '" title="' + statusLabel + '"></span>' +
+                        '<button class="watchlist-toggle-btn ' + pendingClass + '" ' +
+                            'onclick="onToggle(\'' + escHtml(e.symbol) + '\', ' + !e.enabled + ')">' +
+                            (e.enabled ? 'Pause' : 'Activate') +
+                        '</button>' +
+                    '</td>' +
+                '</tr>';
+            });
+            tbody.innerHTML = rows.join('');
 
-        function renderWatchlistPill(entry) {
-            var stateClass = entry.enabled ? 'active' : 'inactive';
-            var pendingClass = _pendingToggles[entry.symbol] ? 'pending' : '';
-            return '<button class="watchlist-pill ' + stateClass + ' ' + pendingClass + '" ' +
-                'title="' + (entry.enabled ? 'Click to pause' : 'Click to activate') + '" ' +
-                'onclick="onToggle(\'' + entry.symbol + '\', ' + !entry.enabled + ')" ' +
-                'aria-pressed="' + entry.enabled + '">' +
-                '<span class="toggle-dot"></span>' +
-                String(entry.symbol) +
-                '</button>';
-        }
-
-        function watchlistShowMore() {
-            _watchlistPage += 20;
-            renderWatchlist(_watchlistData);
+            // Mobile cards fallback
+            var cards = document.getElementById('watchlist-cards');
+            var cardHtml = _watchlistData.map(function(e) {
+                var meta = e.metadata || {};
+                var desc = escHtml(meta.description || meta.reason || '');
+                return '<div class="trade-card' + (e.enabled ? '' : ' inactive-card') + '">' +
+                    '<div class="trade-card-row1">' +
+                        '<span class="trade-card-symbol">' + escHtml(e.symbol) + '</span>' +
+                        '<span class="status-dot ' + (e.enabled ? 'active' : 'inactive') + '"></span>' +
+                    '</div>' +
+                    '<div class="trade-card-row2">' + escHtml(meta.company_name || meta.category || '—') + '</div>' +
+                    '<div class="trade-card-row3">' + desc + '</div>' +
+                '</div>';
+            });
+            cards.innerHTML = DOMPurify.sanitize(cardHtml.join(''), { RETURN_TRUSTED_TYPE: false });
         }
 
         function onToggle(symbol, enabled) {
