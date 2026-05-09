@@ -102,6 +102,31 @@ def wait_for_deployment(api_url: str, api_secret: str, timeout: int = 60) -> boo
     return False
 
 
+def fetch_existing_symbols(api_url: str, api_secret: str) -> set[str]:
+    """Fetch symbols already in the watchlist from the deployed API."""
+    import time
+
+    url = f"{api_url.rstrip('/')}/api/watchlist"
+    for attempt in range(4):
+        try:
+            req = urllib.request.Request(
+                url,
+                method="GET",
+                headers={"Authorization": f"Bearer {api_secret}"} if api_secret else {},
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+                return {e["symbol"] for e in data.get("symbols", [])}
+        except urllib.error.HTTPError as e:
+            if e.code == 500 and attempt < 3:
+                time.sleep(2)
+                continue
+            return set()
+        except Exception:
+            return set()
+    return set()
+
+
 SYMBOL_CATALOG = {
     "ASML": {
         "company_name": "ASML Holding N.V.",
@@ -506,11 +531,54 @@ def main() -> None:
         if not run_migrations(supabase_url, supabase_service_key):
             print("WARNING: migrations failed — continuing anyway")
 
+        # Clean up any stray duplicates before seeding
+        print("Cleaning up duplicate watchlist entries...")
+        cleanup_url = f"https://{supabase_url.lstrip('https://').lstrip('http://').split('.')[0]}.supabase.co/rest/v1/rpc/exec_sql"
+        delete_sql = """
+        WITH ranked AS (
+            SELECT id,
+                   ROW_NUMBER() OVER (PARTITION BY symbol ORDER BY created_at ASC) AS rn
+            FROM watchlist_symbols
+            WHERE deleted_at IS NULL
+        ),
+        duplicates AS (
+            SELECT id FROM ranked WHERE rn > 1
+        )
+        DELETE FROM watchlist_symbols WHERE id IN (SELECT id FROM duplicates);
+        """
+        payload = json.dumps({"query": delete_sql}).encode()
+        cleanup_req = urllib.request.Request(
+            cleanup_url,
+            data=payload,
+            headers={
+                "apikey": supabase_service_key,
+                "Authorization": f"Bearer {supabase_service_key}",
+                "Content-Type": "application/json",
+                "Prefer": "return=minimal",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(cleanup_req, timeout=30) as resp:
+                print(f"Duplicate cleanup complete (status {resp.status})")
+        except urllib.error.HTTPError as e:
+            print(f"WARNING: cleanup HTTP {e.code}: {e.read().decode()[:100]}")
+        except Exception as e:
+            print(f"WARNING: cleanup failed: {e}")
+
     print("Seeding watchlist symbols...")
     bulk_url = f"{api_url}/api/watchlist/bulk"
 
+    # Fetch what already exists to avoid redundant insert attempts
+    existing = fetch_existing_symbols(api_url, api_secret)
+    print(f"Found {len(existing)} existing symbols in watchlist")
+
     entries = []
+    skipped = 0
     for symbol, meta in SYMBOL_CATALOG.items():
+        if symbol in existing:
+            skipped += 1
+            continue
         asset_class = get_asset_class(symbol)
         entries.append(
             {
@@ -524,6 +592,14 @@ def main() -> None:
                 },
             }
         )
+
+    if skipped:
+        print(f"Skipped {skipped} symbols already in watchlist")
+    if not entries:
+        print("All symbols already present — nothing to seed")
+        return
+
+    print(f"Seeding {len(entries)} new symbols...")
 
     payload = json.dumps({"added_by": "ci:seed-2026-05", "entries": entries}).encode()
     req = urllib.request.Request(
@@ -544,6 +620,8 @@ def main() -> None:
             if errors:
                 for err in errors[:5]:
                     print(f"  - {err}")
+                print(f"Seeding incomplete ({added} added, {len(errors)} errors)")
+                sys.exit(1)
     except urllib.error.HTTPError as e:
         body = e.read().decode() if e.fp else ""
         print(f"HTTP {e.code}: {body[:200]}")

@@ -582,7 +582,14 @@ class WatchlistRepository:
         try:
             result = self._client._request("POST", "/watchlist_symbols", json=data)
             return result is not None
-        except Exception:
+        except ConnectionError as e:
+            logger.error("Watchlist: connection error adding %s: %s", symbol, e)
+            return False
+        except Exception as e:
+            err_str = str(e).lower()
+            logger.error("Watchlist: error adding %s: %s (%s)", symbol, type(e).__name__, e)
+            if "409" in err_str or "duplicate" in err_str or "unique" in err_str or "23505" in str(e):
+                logger.warning("Watchlist: duplicate symbol %s", symbol)
             return False
 
 
