@@ -738,6 +738,9 @@ def get_orchestrator() -> "StrategyOrchestrator":  # type: ignore[name-defined]
                         conviction_threshold=float(
                             os.environ.get("ORCHESTRATOR_CONVICTION_THRESHOLD", "0.5")
                         ),
+                        max_symbols_per_strategy=int(
+                            os.environ.get("ORCHESTRATOR_MAX_SYMBOLS", "30")
+                        ),
                     ),
                     supabase=supabase_client,
                     data_strategy_service=data_strategy_service,
