@@ -156,7 +156,9 @@ class TestWatchlistAPI:
         assert response.status_code == 400
         assert "Invalid crypto" in response.json()["error"]
 
-    @pytest.mark.skip(reason="pre-existing failure: add_symbol returns 500 instead of 409 on duplicate")
+    @pytest.mark.skip(
+        reason="pre-existing failure: add_symbol returns 500 instead of 409 on duplicate"
+    )
     def test_post_watchlist_duplicate(self, test_client, mock_watchlist_repo):
         """POST /api/watchlist for existing symbol returns 409."""
         mock_watchlist_repo.add_symbol.return_value = False
