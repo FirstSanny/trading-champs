@@ -63,7 +63,7 @@ deploy:vercel:
   stage: deploy
   image: node:20
   before_script:
-    - npm install -g vercel@latest
+    - npm install -g vercel@53.3.0
   script:
     - vercel --prod --yes --token=$VERCEL_TOKEN
   environment:
@@ -80,10 +80,6 @@ deploy:n8n:
   before_script:
     - pip install --no-cache-dir requests
   script:
-    - export N8N_BASE_URL="$N8N_BASE_URL"
-    - export N8N_API_KEY="$N8N_API_KEY"
-    - export VERCEL_API_URL="$VERCEL_API_URL"
-    - export VERCEL_API_SECRET="$VERCEL_API_SECRET"
     - python scripts/deploy_n8n_workflow.py n8n/workflows/orchestrator-iterate.json
   only:
     - main
