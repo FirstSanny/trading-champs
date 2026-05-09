@@ -107,6 +107,7 @@ class OrchestratorConfig:
     lock_ttl_seconds: int = 120
     watchlist_repository: Any = None  # WatchlistRepository instance, or None to skip
     conviction_threshold: float = 0.5  # Fraction of strategies that must agree to execute (0.0-1.0)
+    max_symbols_per_strategy: int = 30  # Cap symbols per strategy to prevent timeouts
 
 
 class StrategyLoop:
@@ -659,6 +660,12 @@ class StrategyOrchestrator:
 
         if not symbols:
             return
+
+        # Cap symbols to prevent timeouts
+        max_sym = self._config.max_symbols_per_strategy
+        if len(symbols) > max_sym:
+            logger.info("Watchlist: capping %d symbols to %d", len(symbols), max_sym)
+            symbols = symbols[:max_sym]
 
         # Broadcast all symbols to ALL strategy loops (conviction trading)
         # Every strategy analyzes every symbol — conviction is evaluated across strategies

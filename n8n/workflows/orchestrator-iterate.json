@@ -36,6 +36,9 @@
               "value": "application/json"
             }
           ]
+        },
+        "options": {
+          "timeout": 120000
         }
       },
       "id": "http-request",
