@@ -16,6 +16,7 @@ class TestOrchestratorWatchlistIntegration:
 
         mock_config = MagicMock()
         mock_config.watchlist_repository = mock_repo
+        mock_config.max_symbols_per_strategy = 30
 
         orch = StrategyOrchestrator(config=mock_config)
         # Call _refresh_symbols_from_watchlist directly (called at start of iterate_all)
@@ -33,6 +34,7 @@ class TestOrchestratorWatchlistIntegration:
         mock_config.max_position_size = 1.0
         mock_config.max_total_exposure = 1.0
         mock_config.watchlist_repository = None
+        mock_config.max_symbols_per_strategy = 30
 
         with patch.object(StrategyOrchestrator, "_iterate_all_impl", return_value=None):
             orch = StrategyOrchestrator(config=mock_config)
