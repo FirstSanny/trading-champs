@@ -578,14 +578,6 @@ async def watchlist_api(request: Request) -> JSONResponse:
         if not asset_class:
             return JSONResponse(content={"error": "asset_class is required"}, status_code=400)
 
-        # Pre-check: reject if symbol already exists (idempotent duplicate protection)
-        existing = repo.get_by_symbol(symbol)
-        if existing is not None and existing.deleted_at is None:
-            return JSONResponse(
-                content={"error": f"Symbol '{symbol}' already exists"},
-                status_code=409,
-            )
-
         try:
             ok = repo.add_symbol(symbol, asset_class)
         except Exception as e:
@@ -595,6 +587,12 @@ async def watchlist_api(request: Request) -> JSONResponse:
                 return JSONResponse(content={"error": str(e)}, status_code=400)
             raise
         if not ok:
+            entry = repo.get_by_symbol(symbol)
+            if entry is not None and entry.deleted_at is None:
+                return JSONResponse(
+                    content={"error": f"Symbol '{symbol}' already exists"},
+                    status_code=409,
+                )
             return JSONResponse(content={"error": "Failed to add symbol"}, status_code=500)
         entry = repo.get_by_symbol(symbol)
         return JSONResponse(content=entry.to_dict() if entry else {}, status_code=201)
