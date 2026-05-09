@@ -588,7 +588,12 @@ class WatchlistRepository:
         except Exception as e:
             err_str = str(e).lower()
             logger.error("Watchlist: error adding %s: %s (%s)", symbol, type(e).__name__, e)
-            if "409" in err_str or "duplicate" in err_str or "unique" in err_str or "23505" in str(e):
+            if (
+                "409" in err_str
+                or "duplicate" in err_str
+                or "unique" in err_str
+                or "23505" in str(e)
+            ):
                 logger.warning("Watchlist: duplicate symbol %s", symbol)
             return False
 
