@@ -85,8 +85,11 @@ class TestWatchlistRepositoryUnit:
         repo = self._make_repo(mock_client)
 
         # Pre-populate _all_entries_cache with WatchlistEntry symbols
+        now = time.monotonic()
         repo._all_entries_cache = MagicMock()
-        repo._all_entries_cache.symbols = [
+        repo._all_entries_cache.is_entries = True
+        repo._all_entries_cache.timestamp = now - 10  # 10s ago — well within 300s TTL
+        repo._all_entries_cache.entries = [
             WatchlistEntry(
                 id="1",
                 symbol="BTC/USDT",
@@ -98,7 +101,8 @@ class TestWatchlistRepositoryUnit:
                 updated_at=datetime.now(),
             ),
         ]
-        repo._all_entries_cache.timestamp = time.monotonic() - 10  # 10s ago, within TTL
+        # symbols property delegates to entries when is_entries=True
+        repo._all_entries_cache.symbols = [e.symbol for e in repo._all_entries_cache.entries]
 
         result = repo.get_all_entries()
 

@@ -53,6 +53,8 @@ class LoopState:
     consecutive_sell_signals: int = 0
     last_error: Optional[str] = None
     iterations: int = 0
+    # Persisted dry-run positions: {symbol: {"qty": float, "entry_price": float}}
+    dry_run_positions: dict[str, dict] = field(default_factory=dict)
 
     def record_iteration(self, symbol: str, signal: str, action: str) -> None:
         """Record a loop iteration."""
@@ -90,6 +92,7 @@ class LoopState:
             "consecutive_sell_signals": self.consecutive_sell_signals,
             "last_error": self.last_error,
             "iterations": self.iterations,
+            "dry_run_positions": self.dry_run_positions,
         }
 
 
@@ -319,7 +322,8 @@ class LoopStateStore:
                 consecutive_buy_signals INTEGER DEFAULT 0,
                 consecutive_sell_signals INTEGER DEFAULT 0,
                 last_error TEXT,
-                iterations INTEGER DEFAULT 0
+                iterations INTEGER DEFAULT 0,
+                dry_run_positions TEXT DEFAULT '{}'
             )
         """)
         # Ensure exactly one row exists
@@ -352,19 +356,27 @@ class LoopStateStore:
 
         # 2. Fall back to SQLite
         if self._db_initialized:
+            import json
+
             try:
                 conn = sqlite3.connect(self.db_path)
                 cursor = conn.cursor()
                 cursor.execute("""
                     SELECT running, last_run, last_symbol, last_signal, last_action,
                            consecutive_buy_signals, consecutive_sell_signals,
-                           last_error, iterations
+                           last_error, iterations, dry_run_positions
                     FROM loop_state WHERE id = 1
                 """)
                 row = cursor.fetchone()
                 conn.close()
 
                 if row is not None:
+                    dry_run_positions = {}
+                    if row[9]:
+                        try:
+                            dry_run_positions = json.loads(row[9])
+                        except Exception:
+                            pass
                     return LoopState(
                         running=bool(row[0]),
                         last_run=datetime.fromisoformat(row[1]) if row[1] else None,
@@ -375,6 +387,7 @@ class LoopStateStore:
                         consecutive_sell_signals=row[6],
                         last_error=row[7],
                         iterations=row[8],
+                        dry_run_positions=dry_run_positions,
                     )
             except Exception as e:
                 logger.warning(f"LoopStateStore: SQLite load failed ({e}), using in-memory")
@@ -413,6 +426,8 @@ class LoopStateStore:
 
         # 2. Fall back to SQLite
         if self._db_initialized:
+            import json
+
             try:
                 conn = sqlite3.connect(self.db_path)
                 cursor = conn.cursor()
@@ -427,7 +442,8 @@ class LoopStateStore:
                         consecutive_buy_signals = ?,
                         consecutive_sell_signals = ?,
                         last_error = ?,
-                        iterations = ?
+                        iterations = ?,
+                        dry_run_positions = ?
                     WHERE id = 1
                 """,
                     (
@@ -440,6 +456,7 @@ class LoopStateStore:
                         state.consecutive_sell_signals,
                         state.last_error,
                         state.iterations,
+                        json.dumps(state.dry_run_positions),
                     ),
                 )
                 conn.commit()
