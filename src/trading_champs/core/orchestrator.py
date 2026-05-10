@@ -214,7 +214,18 @@ class StrategyLoop:
             if status != "filled" or not filled_price:
                 continue
 
+            # Guard: only enter/exit actions are expected. Any other type is a bug.
+            if action_type not in ("enter", "exit"):
+                logger.warning(
+                    "Unexpected dry_run action type '%s' for %s — this indicates a bug",
+                    action_type,
+                    sym,
+                )
+                continue
+
             if action_type == "enter":
+                # Runtime guard: short is not yet implemented. Adding short support
+                # requires a ShortExecutor and changes to _should_enter/_should_exit.
                 fill = DryRunFill(
                     symbol=sym,
                     bar_timestamp=bar_ts,
@@ -225,6 +236,7 @@ class StrategyLoop:
                 )
                 self.drift_detector.record_dry_run_fill(fill)
             elif action_type == "exit":
+                # Runtime guard: short is not yet implemented.
                 fill = DryRunFill(
                     symbol=sym,
                     bar_timestamp=bar_ts,
