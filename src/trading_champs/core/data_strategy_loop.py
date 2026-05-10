@@ -333,7 +333,10 @@ class DataStrategyLoop:
             DataStrategyMetrics with signal counts and rates.
         """
         # Load current state to get metrics
-        state = self.state_store.load()
+        from trading_champs.core.loop_state import LoopStateStore
+
+        state_store = LoopStateStore(path=f".loop_state_{self._strategy_id}.db")
+        state = state_store.load()
         current_metrics = getattr(state, "current_metrics", {})
 
         total_signals = current_metrics.get("total_signals", 0)

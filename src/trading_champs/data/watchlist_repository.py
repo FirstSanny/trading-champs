@@ -107,7 +107,7 @@ class WatchlistEntry:
 class _CacheEntry:
     """Single cache slot for the watchlist cache."""
 
-    symbols: list[str]
+    entries: list[WatchlistEntry]
     timestamp: float
 
 
@@ -230,7 +230,7 @@ class WatchlistRepository:
         # Populate cache
         with self._lock:
             self._cache = _CacheEntry(
-                symbols=list(symbols),
+                entries=symbols,
                 timestamp=time.monotonic(),
             )
             self._stale_cache = None
@@ -249,9 +249,9 @@ class WatchlistRepository:
             if self._cache_is_valid(self._all_entries_cache):
                 logger.debug(
                     "Watchlist all_entries cache hit: %d entries",
-                    len(self._all_entries_cache.symbols),  # type: ignore[arg-type]
+                    len(self._all_entries_cache.entries),
                 )
-                return list(self._all_entries_cache.symbols)  # type: ignore[arg-type]
+                return list(self._all_entries_cache.entries)
 
         # Cache miss or expired — fetch from DB
         try:
@@ -300,11 +300,9 @@ class WatchlistRepository:
                 logger.warning("Skipping malformed watchlist row: %s", e)
                 continue
 
-        # Populate cache — store entries as list in symbols field (generic cache slot)
-        entry_symbols = [e.symbol for e in entries]
         with self._lock:
             self._all_entries_cache = _CacheEntry(
-                symbols=entry_symbols,  # type: ignore[arg-type]
+                entries=list(entries),
                 timestamp=time.monotonic(),
             )
             self._all_entries_stale_cache = None
@@ -541,9 +539,13 @@ class WatchlistRepository:
         insert_errors: list[str] = []
 
         for v in validated:
-            ok = self._add_symbol_no_invalidate(
-                v["symbol"], v["asset_class"], v["added_by"], v["metadata"]
-            )
+            try:
+                ok = self._add_symbol_no_invalidate(
+                    v["symbol"], v["asset_class"], v["added_by"], v["metadata"]
+                )
+            except Exception as e:
+                logger.error("Watchlist bulk_add: %s failed — %s", v["symbol"], e)
+                ok = False
             if ok:
                 success_count += 1
             else:

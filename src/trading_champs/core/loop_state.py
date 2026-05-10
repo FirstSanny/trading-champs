@@ -165,6 +165,7 @@ class RedisDistributedLock:
             )
         except Exception as e:
             logger.error(f"Failed to acquire Redis lock: {e}")
+            logger.warning("Redis unavailable — skipping distributed lock (fail-open)")
             return True  # Fail open — don't block the loop
 
         if not lock_acquired:
