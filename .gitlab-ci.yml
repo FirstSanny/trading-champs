@@ -2,6 +2,7 @@ stages:
   - test
   - lint
   - build
+  - pre-deploy
   - deploy
 
 variables:
@@ -9,7 +10,7 @@ variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
 
 cache:
-  key: pip-default
+  key: ${CI_COMMIT_REF_SLUG}-pip
   paths:
     - .cache/pip
 
@@ -54,14 +55,38 @@ build:
     paths:
       - dist/
     expire_in: 1 day
-  only:
-    - main
-    - develop
-    - tags
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_COMMIT_TAG'
+
+database-migrate:
+  stage: pre-deploy
+  image: python:3.11
+  needs:
+    - job: build
+      optional: true
+  before_script:
+    - pip install --no-cache-dir requests
+  script:
+    - python scripts/run_migrations.py
+  variables:
+    SUPABASE_URL: $SUPABASE_URL
+    SUPABASE_SERVICE_KEY: $SUPABASE_SERVICE_KEY
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "develop"'
+    - if: '$CI_COMMIT_TAG'
+  when: on_success
 
 deploy:vercel:
   stage: deploy
   image: node:20
+  needs:
+    - job: build
+      optional: true
+    - job: database-migrate
+      optional: true
   before_script:
     - npm install -g vercel@53.3.0
   script:
@@ -69,6 +94,23 @@ deploy:vercel:
   environment:
     name: production
     url: $CI_ENVIRONMENT_URL
+  only:
+    - main
+    - tags
+  when: on_success
+
+seed-watchlist:
+  stage: deploy
+  image: python:3.11
+  needs:
+    - job: deploy:vercel
+  before_script:
+    - pip install --no-cache-dir requests
+  script:
+    - python scripts/seed_watchlist_api.py $CI_ENVIRONMENT_URL $VERCEL_API_SECRET $SUPABASE_SERVICE_KEY
+  variables:
+    SUPABASE_URL: $SUPABASE_URL
+    SUPABASE_SERVICE_KEY: $SUPABASE_SERVICE_KEY
   only:
     - main
     - tags

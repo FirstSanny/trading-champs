@@ -254,7 +254,7 @@ class StrategyLoop:
         win_rate = winning_trades / total_trades
 
         # Calculate current drawdown from trade log equity progression
-        running_equity = self.tracker.initial_balance
+        running_equity = self.tracker.current_balance
         equity_points = [running_equity]
         for t in sorted(closed_trades, key=lambda x: x.exit_time or x.entry_time):
             if t.pnl is not None:
@@ -757,13 +757,68 @@ class StrategyOrchestrator:
                     "error": "iterate timed out after 45s total",
                 }
 
-        # Run data-driven strategies with their own execution loops
-        # (parallel, with timeout, per the DataStrategyLoop design)
+        # Run price strategies (parallel, with timeout)
+        results["strategies"] = {}
         symbols: list[str] = []
         if self._strategy_loops:
             first_loop = next(iter(self._strategy_loops.values()))
             symbols = first_loop.config.symbols
 
+        def run_strategy(
+            strategy_id: str, strategy_loop: StrategyLoop
+        ) -> tuple[str, dict[str, Any]]:
+            try:
+                # Update position_size_fraction from current stage_config before iterate
+                current_fraction = strategy_loop.config.stage_config.capital_fraction
+                strategy_loop.loop.config.position_size_fraction = current_fraction
+
+                result = strategy_loop.iterate(skip_execution=True)
+                return strategy_id, result
+            except Exception as e:
+                logger.error(f"Strategy {strategy_id} error in iterate_all: {e}")
+                return strategy_id, {
+                    "status": "error",
+                    "strategy_id": strategy_id,
+                    "error": str(e),
+                }
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                executor.submit(run_strategy, sid, slo) for sid, slo in self._strategy_loops.items()
+            }
+            # Wait for all futures with a total timeout so the whole iterate_all
+            # doesn't hang beyond ~45s (leaves time for release in finally block)
+            done, not_done = wait(futures, timeout=45)
+            for future in done:
+                try:
+                    strategy_id, result = future.result(timeout=5)
+                    results["strategies"][strategy_id] = result
+                    sig_count = len(result.get("signals", []))
+                    action_count = len(result.get("actions", []))
+                    logger.info(
+                        f"[iterate_all] {strategy_id}: "
+                        f"s={sig_count} a={action_count} st={result.get('status')}"
+                    )
+                except TimeoutError:
+                    sid = futures[future]
+                    logger.error(f"Strategy {sid} result timed out — continuing")
+                    results["strategies"][sid] = {
+                        "status": "error",
+                        "strategy_id": sid,
+                        "error": "result timed out after 5s",
+                    }
+            for future in not_done:
+                sid = futures[future]
+                future.cancel()
+                logger.warning(f"Strategy {sid} future not done after 45s timeout — cancelling")
+                results["strategies"][sid] = {
+                    "status": "error",
+                    "strategy_id": sid,
+                    "error": "iterate timed out after 45s total",
+                }
+
+        # Run data-driven strategies with their own execution loops
+        # (parallel, with timeout, per the DataStrategyLoop design)
         if self._data_strategy_service and self._data_strategy_ids:
             logger.info(
                 f"[iterate_all] Running {len(self._data_strategy_ids)} "
@@ -772,7 +827,6 @@ class StrategyOrchestrator:
             data_results = self._iterate_data_strategies(symbols)
 
             # Merge data strategy results into results["strategies"]
-            # These execute independently (not fed into conviction aggregation)
             for strategy_id, result in data_results.items():
                 results["strategies"][strategy_id] = result
 
@@ -844,6 +898,13 @@ class StrategyOrchestrator:
         min_required = max(2, threshold_count)
 
         for sym, counts in symbol_signal_counts.items():
+            logger.debug(
+                "[conviction] %s: count=%s, threshold=%s, required=%s",
+                sym,
+                counts,
+                self._conviction_threshold,
+                min_required,
+            )
             if counts["BUY"] >= min_required:
                 conviction_trades.append(
                     {
@@ -875,8 +936,15 @@ class StrategyOrchestrator:
         }
 
         if conviction_trades:
+            # Use a strategy loop whose mode matches the first strategy's mode
+            # to avoid non-deterministic dict iteration ordering
             first_loop = next(iter(self._strategy_loops.values()))
-            conviction_executor = first_loop.loop.executor
+            matching_loop = first_loop
+            for sl in self._strategy_loops.values():
+                if sl.loop.config.mode == first_loop.loop.config.mode:
+                    matching_loop = sl
+                    break
+            conviction_executor = matching_loop.loop.executor
 
             for trade in conviction_trades:
                 sym = trade["symbol"]
@@ -903,6 +971,16 @@ class StrategyOrchestrator:
                     # Check position not already open
                     if conviction_executor.has_position(sym):
                         logger.info(f"Conviction BUY for {sym} skipped — position already open")
+                        continue
+
+                    # Check max positions
+                    open_trades = first_loop.tracker.trade_log.get_open_trades()
+                    if len(open_trades) >= first_loop.config.max_positions:
+                        logger.info(
+                            "Conviction BUY for %s skipped — max positions (%s) reached",
+                            sym,
+                            first_loop.config.max_positions,
+                        )
                         continue
 
                     # Calculate position size

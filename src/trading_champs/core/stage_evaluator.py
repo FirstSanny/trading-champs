@@ -140,7 +140,7 @@ class StageEvaluator:
             if demote_stage == current_stage:
                 logger.info(f"Strategy {strategy_id} at {current_stage}, cannot demote further")
                 return None
-            logger.warning(
+            logger.info(
                 f"Strategy {strategy_id} demoted from {current_stage} to {demote_stage}: "
                 f"drawdown {metrics.current_drawdown_pct:.2f}% exceeds "
                 f"max {config.max_drawdown_pct}%"
@@ -215,7 +215,7 @@ class StageEvaluator:
             StageTransition if a promotion or demotion occurred, None otherwise.
         """
         _ = get_stage_config(current_stage)
-        max(0, (datetime.utcnow() - stage_entered_at).days)
+        metrics.days_in_stage = max(0, (datetime.utcnow() - stage_entered_at).days)
 
         # Archived strategies are never re-evaluated automatically
         if current_stage == "archived":
@@ -225,7 +225,7 @@ class StageEvaluator:
 
         # Auto-archive if consecutive neutral >= 15
         if consecutive_neutral >= 15:
-            logger.warning(
+            logger.info(
                 f"Strategy {strategy_id} archived: {consecutive_neutral} consecutive neutral "
                 f"signals (limit=15)"
             )

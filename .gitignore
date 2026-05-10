@@ -98,3 +98,4 @@ public/
 .env*.local
 
 .env*.local
+.vercel
