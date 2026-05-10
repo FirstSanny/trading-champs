@@ -105,10 +105,23 @@ class WatchlistEntry:
 
 @dataclass
 class _CacheEntry:
-    """Single cache slot for the watchlist cache."""
+    """Single cache slot for the watchlist cache.
+
+    Can hold either list[str] (symbols from get_enabled_symbols) or
+    list[WatchlistEntry] (entries from get_all_entries).
+    """
 
     entries: list[WatchlistEntry]
     timestamp: float
+    is_entries: bool = False  # True if entries are WatchlistEntry, False if str
+
+    @property
+    def symbols(self) -> list[str]:
+        """Convenience accessor for symbol strings."""
+        if self.is_entries:
+            return [e.symbol for e in self.entries]
+        # Assume strings
+        return list(self.entries)
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +317,7 @@ class WatchlistRepository:
             self._all_entries_cache = _CacheEntry(
                 entries=list(entries),
                 timestamp=time.monotonic(),
+                is_entries=True,
             )
             self._all_entries_stale_cache = None
 
