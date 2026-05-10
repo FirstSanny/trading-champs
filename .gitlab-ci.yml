@@ -85,8 +85,6 @@ deploy:vercel:
   needs:
     - job: build
       optional: true
-    - job: database-migrate
-      optional: true
   before_script:
     - npm install -g vercel@53.3.0
   script:
