@@ -146,6 +146,13 @@ class TradingLoop:
             if self.config.mode != "dry_run":
                 self._alpaca.connect()
             self._executor = TradeExecutor(self._alpaca)
+            # Re-hydrate dry-run positions from persisted state (survives cold starts)
+            if self.config.mode == "dry_run" and self.state.dry_run_positions:
+                self._alpaca._positions = dict(self.state.dry_run_positions)
+                logger.info(
+                    f"[_ensure_alpaca] Re-hydrated {len(self.state.dry_run_positions)} "
+                    f"dry-run positions from persisted state"
+                )
         return self._alpaca
 
     @property
@@ -516,6 +523,9 @@ class TradingLoop:
                 self.state.record_error(f"{symbol}: {e}")
 
         # Persist state after iteration
+        # Sync dry-run positions from connector to state so they survive cold starts
+        if self.config.mode == "dry_run" and self._alpaca is not None:
+            self.state.dry_run_positions = dict(self._alpaca._positions)
         self.state_store.save(self.state)
         result["state"] = self.state.to_dict()
 
