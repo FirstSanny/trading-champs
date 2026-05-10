@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import datetime
@@ -321,6 +322,7 @@ class SupabaseClient:
         consecutive_sell_signals: int,
         last_error: str | None,
         iterations: int,
+        dry_run_positions: Optional[dict] = None,
     ) -> bool:
         """Upsert a loop state row."""
         data = {
@@ -336,6 +338,8 @@ class SupabaseClient:
             "last_error": last_error,
             "iterations": iterations,
         }
+        if dry_run_positions:
+            data["dry_run_positions"] = json.dumps(dry_run_positions)
         result = self._request(
             "POST",
             "/loop_state",
