@@ -94,6 +94,7 @@ trading-champs.vercel.app/
 .claude/
 memory/
 public/
+paperclip_reports/
 
 .env*.local
 
