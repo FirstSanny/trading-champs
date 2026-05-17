@@ -89,6 +89,7 @@ supabase/.temp/
 # Vercel
 trading-champs.vercel.app/
 .vercel/
+trading-champs-fqtdmgxa7-draiwing
 
 # Agent and project metadata
 .claude/
