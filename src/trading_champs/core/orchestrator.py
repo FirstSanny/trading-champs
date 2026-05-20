@@ -768,6 +768,12 @@ class StrategyOrchestrator:
                     "error": "iterate timed out after 45s total",
                 }
 
+        # Symbols to pass to data strategy iteration
+        symbols: list[str] = []
+        if self._strategy_loops:
+            first_loop = next(iter(self._strategy_loops.values()))
+            symbols = first_loop.config.symbols
+
         # Run data-driven strategies with their own execution loops
         # (parallel, with timeout, per the DataStrategyLoop design)
         if self._data_strategy_service and self._data_strategy_ids:
