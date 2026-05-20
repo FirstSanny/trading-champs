@@ -735,67 +735,6 @@ class StrategyOrchestrator:
 
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {
-                executor.submit(run_strategy, sid, slo): sid
-                for sid, slo in self._strategy_loops.items()
-            }
-            # Wait for all futures with a total timeout so the whole iterate_all
-            # doesn't hang beyond ~45s (leaves time for release in finally block)
-            done, not_done = wait(futures, timeout=45)
-            for future in done:
-                try:
-                    strategy_id, result = future.result(timeout=5)
-                    results["strategies"][strategy_id] = result
-                    sig_count = len(result.get("signals", []))
-                    action_count = len(result.get("actions", []))
-                    logger.info(
-                        f"[iterate_all] {strategy_id}: "
-                        f"s={sig_count} a={action_count} st={result.get('status')}"
-                    )
-                except TimeoutError:
-                    sid = futures[future]
-                    logger.error(f"Strategy {sid} result timed out — continuing")
-                    results["strategies"][sid] = {
-                        "status": "error",
-                        "strategy_id": sid,
-                        "error": "result timed out after 5s",
-                    }
-            for future in not_done:
-                sid = futures[future]
-                future.cancel()
-                logger.warning(f"Strategy {sid} future not done after 45s timeout — cancelling")
-                results["strategies"][sid] = {
-                    "status": "error",
-                    "strategy_id": sid,
-                    "error": "iterate timed out after 45s total",
-                }
-
-        # Run price strategies (parallel, with timeout)
-        results["strategies"] = {}
-        symbols: list[str] = []
-        if self._strategy_loops:
-            first_loop = next(iter(self._strategy_loops.values()))
-            symbols = first_loop.config.symbols
-
-        def run_strategy(
-            strategy_id: str, strategy_loop: StrategyLoop
-        ) -> tuple[str, dict[str, Any]]:
-            try:
-                # Update position_size_fraction from current stage_config before iterate
-                current_fraction = strategy_loop.config.stage_config.capital_fraction
-                strategy_loop.loop.config.position_size_fraction = current_fraction
-
-                result = strategy_loop.iterate(skip_execution=True)
-                return strategy_id, result
-            except Exception as e:
-                logger.error(f"Strategy {strategy_id} error in iterate_all: {e}")
-                return strategy_id, {
-                    "status": "error",
-                    "strategy_id": strategy_id,
-                    "error": str(e),
-                }
-
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {
                 executor.submit(run_strategy, sid, slo) for sid, slo in self._strategy_loops.items()
             }
             # Wait for all futures with a total timeout so the whole iterate_all
