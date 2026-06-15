@@ -97,6 +97,9 @@ memory/
 public/
 paperclip_reports/
 
+# Performance check ledger (append-only, regenerated on every run)
+data/performance_log.jsonl
+
 .env*.local
 
 .env*.local

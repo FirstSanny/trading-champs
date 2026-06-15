@@ -36,6 +36,8 @@ from trading_champs.core.loop_state import LoopConfig, LoopStateStore
 from trading_champs.data.supabase_client import SupabaseClient, get_supabase_client
 
 # Late imports to ensure path is set
+from trading_champs.performance.checker import PerformanceChecker
+from trading_champs.performance.ledger import PerformanceLedger
 from trading_champs.pl.dashboard import DashboardData, DashboardProvider
 from trading_champs.pl.metrics import PerformanceMetrics
 from trading_champs.pl.tracker import DailyPnL, PnLTracker, Trade, TradeSide
@@ -1149,6 +1151,97 @@ async def metrics(request: Request) -> PlainTextResponse:
     )
 
 
+# Performance checker singleton
+_performance_ledger: PerformanceLedger | None = None
+_performance_ledger_lock = threading.Lock()
+
+
+def _get_performance_ledger() -> PerformanceLedger:
+    global _performance_ledger
+    if _performance_ledger is None:
+        with _performance_ledger_lock:
+            if _performance_ledger is None:
+                _performance_ledger = PerformanceLedger()
+    return _performance_ledger
+
+
+def _collect_strategy_stages() -> dict[str, str]:
+    """Best-effort strategy_id → stage mapping for the checker.
+
+    Reads from the orchestrator singleton if it's been initialized; otherwise
+    returns an empty dict. Strategies with no stage entry are reported as
+    'unknown' and still flow through classification.
+    """
+    try:
+        orchestrator = get_orchestrator()
+    except Exception:
+        return {}
+    try:
+        states = orchestrator.get_all_strategy_states()
+    except Exception:
+        return {}
+    return {sid: state.stage for sid, state in states.items()}
+
+
+def _known_strategies() -> list[str]:
+    try:
+        from trading_champs.signals.strategies import (
+            DATA_STRATEGY_REGISTRY,
+            STRATEGY_REGISTRY,
+        )
+
+        return list(STRATEGY_REGISTRY.keys()) + list(DATA_STRATEGY_REGISTRY.keys())
+    except Exception:
+        return []
+
+
+async def performance_run_api(request: Request) -> JSONResponse:
+    """Run the performance checker synchronously and append to the ledger."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
+    checker = PerformanceChecker(
+        tracker=tracker,
+        strategy_stages=_collect_strategy_stages(),
+        known_strategies=_known_strategies(),
+    )
+    report = checker.run()
+    _get_performance_ledger().append(report)
+    return JSONResponse(content=report.to_dict(), status_code=200)
+
+
+async def performance_summary_api(request: Request) -> JSONResponse:
+    """Return the most recent performance report from the ledger."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
+    rows = _get_performance_ledger().read_last(1)
+    if not rows:
+        return JSONResponse(
+            content={
+                "run_at": None,
+                "strategies": {},
+                "summary": {"ok": 0, "poor": 0, "watch": 0, "inactive": 0},
+                "notes": ["no performance reports recorded yet"],
+                "thresholds": None,
+            },
+            status_code=200,
+        )
+    return JSONResponse(content=rows[-1], status_code=200)
+
+
+async def performance_history_api(request: Request) -> JSONResponse:
+    """Return the last N performance reports (default 30, capped at 365)."""
+    if (err_resp := auth_guard(request)) is not None:
+        return err_resp
+    raw = request.query_params.get("n", "30")
+    try:
+        n = int(raw)
+    except ValueError:
+        n = 30
+    n = max(1, min(n, 365))
+    rows = _get_performance_ledger().read_last(n)
+    return JSONResponse(content={"runs": rows, "count": len(rows)}, status_code=200)
+
+
 # Starlette routes
 routes = [
     Route("/", dashboard),
@@ -1169,6 +1262,9 @@ routes = [
     Route("/api/loop/status", loop_status),
     Route("/api/loop/iterate", loop_iterate, methods=["POST"]),
     Route("/api/orchestrator/iterate", strategy_orchestrator_iterate, methods=["POST"]),
+    Route("/api/debug/performance-run", performance_run_api, methods=["POST"]),
+    Route("/api/debug/performance-summary", performance_summary_api),
+    Route("/api/debug/performance", performance_history_api),
     Route("/api/watchlist", watchlist_api, methods=["GET", "POST"]),
     Route("/api/watchlist/{symbol}", watchlist_api, methods=["DELETE", "PATCH"]),
     Route("/api/watchlist/bulk", watchlist_api, methods=["POST"]),
